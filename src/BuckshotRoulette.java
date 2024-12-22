@@ -1,3 +1,5 @@
+package src;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -15,7 +17,7 @@ public class BuckshotRoulette {
     private static final int PORT = 0xDEA;
     private static final int BUFFER_SIZE = 1024;
 
-    private enum Shell {
+    public enum Shell {
         live(0),
         blank(1);
 
@@ -27,14 +29,49 @@ public class BuckshotRoulette {
         }
     }
 
-    private static List<Shell> shells = new CopyOnWriteArrayList<>();
+    static Map<String,Integer> hp = new HashMap<>();
+    static List<Shell> shells = new CopyOnWriteArrayList<>();
+    static int damage = 1;
+    static final Map<Item, Integer> items = new HashMap<>();
+    static boolean cuffedOpponent = false;
     private static final AtomicBoolean gameOver = new AtomicBoolean(false);
+    private static final Map<String, Item> numberToItem = new HashMap<>();
+
+    static {
+        numberToItem.put("3", new Item.MagnifyingGlass());
+        numberToItem.put("4", new Item.Cigarette());
+        numberToItem.put("5", new Item.Beer());
+        numberToItem.put("6", new Item.Handsaw());
+        numberToItem.put("7", new Item.Handcuffs());
+
+        for (Item item : numberToItem.values()) {
+            items.put(item, 0);
+        }
+    }
+
+    private static void moreItems(PrintWriter out) {
+        List<Item> tempItems = new ArrayList<>(numberToItem.values());
+        Random random = new Random();
+        List<Item> chosenItems = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            Item selectedItem = tempItems.get(random.nextInt(tempItems.size()));
+            chosenItems.add(selectedItem);
+            items.put(selectedItem, items.get(selectedItem) + 1);
+        }
+        StringBuilder stringBuilder = new StringBuilder();
+        for (Item item : chosenItems) {
+            stringBuilder.append(item.getClass().getName()).append(", ");
+        }
+        stringBuilder.append("\n");
+        System.out.println("You get " + stringBuilder);
+        sendMessage(out, "summary:", "Opponent gets " + stringBuilder + "\n");
+    }
 
     private static void displayHealth(String player, int hp) {
         System.out.println(player + "'s HP: " + hp + "\n");
     }
 
-    private static void sendMessage(PrintWriter out, String prefix, String msg) {
+    static void sendMessage(PrintWriter out, String prefix, String msg) {
         out.println(prefix + msg);
         out.flush();
     }
@@ -56,12 +93,15 @@ public class BuckshotRoulette {
         for (Shell s : newShells) {
             sb.append(s.getValue());
         }
+        sb.append("\n");
         sendMessage(out, "reload:", sb.toString());
+        sendMessage(out, "moreitems:", "\n");
+        moreItems(out);
 
         return newShells;
     }
 
-    private static String printRoundSummary(String shooter, String target, Shell shell, Map<String,Integer> hp) {
+    private static String printRoundSummary(String shooter, String target, Shell shell) {
         String outcome = (shell == Shell.live) ? "Hit (Live shell)" : "Miss (Blank shell)";
         String shot_description = shooter.equals(target) ? "themselves" : target;
 
@@ -79,7 +119,7 @@ public class BuckshotRoulette {
     }
 
     private static Triple<List<Shell>, Map<String,Integer>, String> takeTurn(
-            String target, String other, Map<String,Integer> hp, PrintWriter out,
+            String target, String other, PrintWriter out,
             String shooter)
     {
         if (shells.isEmpty()) {
@@ -93,28 +133,40 @@ public class BuckshotRoulette {
 
         String action;
         if (shell == Shell.live) {
-            hp.put(target, hp.get(target) - 1);
+            hp.put(target, hp.get(target) - damage);
             displayHealth(target, hp.get(target));
-            sendMessage(out, "info:", target + " lost 1 HP. Remaining HP: " + hp.get(target));
+            sendMessage(out, "summary:", target + " lost " + damage + " HP. Remaining HP: " + hp.get(target));
+            sendMessage(out, "damage:", damage + "," + target);
+            damage = 1;
 
             if (hp.get(target) <= 0) {
                 System.out.println(target + " has been eliminated! " + other + " wins!");
                 sendMessage(out, "control:", "game_over");
                 System.exit(0);
             }
-            action = "switch";
+            if (cuffedOpponent) {
+                cuffedOpponent = false;
+                System.out.println("Your opponent is cuffed!");
+                action = "continue";
+            } else {
+                action = "switch";
+            }
         } else {
             // Blank shell
             if (shooter.equals(target)) {
                 action = "continue";
-                sendMessage(out, "control:", "continue");
             } else {
-                action = "switch";
-                sendMessage(out, "control:", "switch");
+                if (cuffedOpponent) {
+                    cuffedOpponent = false;
+                    System.out.println("Your opponent is cuffed!");
+                    action = "continue";
+                } else {
+                    action = "switch";
+                }
             }
         }
 
-        String summary = printRoundSummary(shooter, target, shell, hp);
+        String summary = printRoundSummary(shooter, target, shell);
         System.out.println(summary);
         sendMessage(out, "summary:", summary);
 
@@ -122,7 +174,7 @@ public class BuckshotRoulette {
     }
 
     private static void handleIncomingMessages(BufferedReader in, PrintWriter out,
-                                               String opponent, Map<String,Integer> hp,
+                                               String opponent,
                                                String player_name) {
         StringBuilder buffer = new StringBuilder();
         try {
@@ -156,7 +208,7 @@ public class BuckshotRoulette {
                             }
                             case "your_turn" ->
                                 // It's now our turn
-                                    currentTurn(player_name, opponent, hp, out);
+                                    currentTurn(player_name, opponent, out);
                             default -> System.out.println("[UNKNOWN CONTROL MESSAGE]: " + msg);
                         }
                     } else if (line.startsWith("summary:")) {
@@ -182,20 +234,26 @@ public class BuckshotRoulette {
                         }
                         System.out.println("[INFO] Shotgun loaded with " + live_count + " live shells and "
                                 + blank_count + " blank shells (order is hidden).\n");
-                    } else if (line.startsWith("info:")) {
-                        String info_msg = line.substring(5);
+                    } else if (line.startsWith("damage:")) {
+                        String info_msg = line.substring("damage:".length());
                         System.out.println(info_msg);
-                        if (info_msg.contains("lost 1 HP. Remaining HP:")) {
-                            // Parse new HP
-                            // Format: "<player_name> lost 1 HP. Remaining HP: <new_hp>"
-                            String[] parts = info_msg.split("\\s+");
-                            // parts[0] = player name
-                            // last part = new_hp
-                            String target_player = parts[0];
-                            int new_hp = Integer.parseInt(parts[parts.length - 1]);
-                            hp.put(target_player, new_hp);
+                        String[] parts = info_msg.split(",");
+                        String target_player = parts[1];
+                        int new_hp = Integer.parseInt(parts[0]);
+                        hp.put(target_player, hp.get(target_player) - new_hp);
+                    } else if (line.startsWith("moreitems:")) {
+                        moreItems(out);
+                    } else if (line.startsWith("eject:")) {
+                        if (!shells.isEmpty()) {
+                            shells.removeFirst();
                         }
-                    } else {
+                        System.out.println(line.substring("eject:".length()));
+                    } else if (line.startsWith("heal:")) {
+                        String substring = line.substring("heal:".length()).trim();
+                        hp.put(substring, hp.get(substring) + 1);
+                        System.out.println("Opponent smoked 1 HP.");
+                    }
+                    else {
                         // Unrecognized message
                         System.out.println(line);
                     }
@@ -207,7 +265,7 @@ public class BuckshotRoulette {
         }
     }
 
-    private static void currentTurn(String player, String opponent, Map<String,Integer> hp, PrintWriter out) {
+    private static void currentTurn(String player, String opponent, PrintWriter out) {
         Scanner sc = new Scanner(System.in);
         while (!gameOver.get()) {
             if (shells.isEmpty()) {
@@ -216,17 +274,20 @@ public class BuckshotRoulette {
             }
             System.out.println("Options:");
             System.out.println("1. Shoot Yourself");
-            System.out.println("2. Shoot Your Opponent\n");
-            System.out.print("Choose an option (1/2): ");
+            System.out.println("2. Shoot Your Opponent");
+            for (Map.Entry<String, Item> entry : numberToItem.entrySet()) {
+                System.out.println(entry.getKey() + ". " + entry.getValue().text() + " (" + items.get(entry.getValue()) + ")");
+            }
+            System.out.print("Choose an option: ");
             String choice = sc.nextLine().trim();
 
             if (choice.equals("1") || choice.equals("2")) {
                 try {
                     Triple<List<Shell>, Map<String,Integer>, String> result;
                     if (choice.equals("1")) {
-                        result = takeTurn(player, opponent, hp, out, player);
+                        result = takeTurn(player, opponent, out, player);
                     } else {
-                        result = takeTurn(opponent, player, hp, out, player);
+                        result = takeTurn(opponent, player, out, player);
                     }
 
                     shells = result.a;
@@ -244,8 +305,14 @@ public class BuckshotRoulette {
                     System.out.println("Connection lost. Exiting...");
                     System.exit(1);
                 }
-            } else {
-                System.out.println("Invalid choice. Please enter 1 or 2.");
+            } else if (numberToItem.containsKey(choice) && items.get(numberToItem.get(choice)) > 0) {
+                numberToItem.get(choice).use(out, player);
+                items.put(numberToItem.get(choice), items.get(numberToItem.get(choice)) - 1);
+            } else if (numberToItem.containsKey(choice)) {
+                System.out.println("You don't have " + numberToItem.get(choice).getClass().getName() + "!");
+            }
+            else {
+                System.out.println("Invalid choice.");
             }
         }
     }
@@ -263,10 +330,10 @@ public class BuckshotRoulette {
             mode = sc.nextLine().trim().toLowerCase();
         } while (!mode.equals("host") && !mode.equals("join"));
 
-        Socket connection = null;
-        String opponent_name = null;
-        PrintWriter out = null;
-        BufferedReader in = null;
+        Socket connection;
+        String opponent_name;
+        BufferedReader in;
+        PrintWriter out;
 
         CountDownLatch turnLatch = new CountDownLatch(1);
 
@@ -303,12 +370,12 @@ public class BuckshotRoulette {
                 DiscoveryThread discovery = new DiscoveryThread();
                 discovery.start();
 
-                System.out.println("[INFO] Searching for a BuckshotRoulette game on LAN...");
+                System.out.println("[INFO] Searching for a src.BuckshotRoulette game on LAN...");
                 System.out.println("       (This might take a few seconds; press Enter to cancel.)");
 
                 // Optionally, you could allow the user to press Enter to cancel the search
                 // or wait a maximum time. For simplicity, let's wait up to ~10 seconds (the
-                // socket timeout in DiscoveryThread).
+                // socket timeout in src.DiscoveryThread).
                 sc.nextLine();
                 discovery.stopDiscovery();
                 discovery.join();
@@ -352,12 +419,13 @@ public class BuckshotRoulette {
                     If you shoot yourself with a live shell, you lose HP and turn passes over.
                     If you shoot your opponent with a blank, turn passes to the opponent.
                     If you shoot yourself with a blank, you get another turn.
-                    Shotgun reloads when it becomes empty
+                    Shotgun reloads when it becomes empty.
+                    
+                    Two items each. More items after each reload.
                     -----------""");
 
-            Map<String,Integer> hp = new HashMap<>();
-            hp.put(player_name, 3);
-            hp.put(opponent_name, 3);
+            hp.put(player_name, 5);
+            hp.put(opponent_name, 5);
 
             displayHealth(player_name, hp.get(player_name));
             displayHealth(opponent_name, hp.get(opponent_name));
@@ -368,14 +436,12 @@ public class BuckshotRoulette {
             String opponentFinal = opponent_name;
 
             String finalPlayer_name = player_name;
-            Thread incomingThread = new Thread(() -> {
-                handleIncomingMessages(inFinal, outFinal, opponentFinal, hp, finalPlayer_name);
-            });
+            Thread incomingThread = new Thread(() -> handleIncomingMessages(inFinal, outFinal, opponentFinal, finalPlayer_name));
             incomingThread.setDaemon(true);
             incomingThread.start();
 
             if (mode.equals("host")) {
-                currentTurn(player_name, opponent_name, hp, out);
+                currentTurn(player_name, opponent_name, out);
                 System.out.println("Waiting for your opponent's turn...");
                 turnLatch.await();
             } else {
@@ -384,7 +450,7 @@ public class BuckshotRoulette {
             }
 
         } catch (Exception e) {
-            System.out.println("An error occurred. Exiting...");
+            e.printStackTrace();
             System.exit(1);
         }
     }

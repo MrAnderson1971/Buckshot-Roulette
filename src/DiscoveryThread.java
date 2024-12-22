@@ -1,3 +1,5 @@
+package src;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -30,7 +32,7 @@ class DiscoveryThread extends Thread {
                             discoveredHost = packet.getAddress().getHostAddress();
                             discoveredPort = Integer.parseInt(parts[2]);
 
-                            System.out.println("[INFO] Found a BuckshotRoulette game!");
+                            System.out.println("[INFO] Found a src.BuckshotRoulette game!");
                             System.out.println("       Host IP: " + discoveredHost);
                             System.out.println("       Port   : " + discoveredPort);
 
@@ -40,11 +42,11 @@ class DiscoveryThread extends Thread {
                     }
                 } catch (Exception ex) {
                     // If we time out or other exceptions, just keep waiting or break
-                    System.out.println("[INFO] DiscoveryThread: still searching for a host...");
+                    System.out.println("[INFO] src.DiscoveryThread: still searching for a host...");
                 }
             }
         } catch (Exception e) {
-            System.err.println("[ERROR] DiscoveryThread: " + e.getMessage());
+            System.err.println("[ERROR] src.DiscoveryThread: " + e.getMessage());
         }
     }
 

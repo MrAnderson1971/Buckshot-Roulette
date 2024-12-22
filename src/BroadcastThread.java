@@ -1,3 +1,5 @@
+package src;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -36,7 +38,7 @@ class BroadcastThread extends Thread {
                 Thread.sleep(2000);
             }
         } catch (Exception e) {
-            System.err.println("[ERROR] BroadcastThread: " + e.getMessage());
+            System.err.println("[ERROR] src.BroadcastThread: " + e.getMessage());
         }
     }
 
