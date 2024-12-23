@@ -1,6 +1,7 @@
 package src;
 
 import java.io.PrintWriter;
+import java.util.Random;
 
 import static src.BuckshotRoulette.*;
 
@@ -25,7 +26,7 @@ public abstract class Item {
         public void use(PrintWriter out, String player) {
             hp.put(player, hp.get(player) + 1);
             System.out.println("Smoked one HP back.\n");
-            sendMessage(out, "summary:", player + "\n");
+            sendMessage(out, "heal:", player + ",1,Opponent smoked 1 HP.\n");
         }
     }
 
@@ -60,6 +61,53 @@ public abstract class Item {
             cuffedOpponent = true;
             System.out.println("Cuffed your opponent.");
             sendMessage(out, "summary:", "Opponent cuffed you!\n");
+        }
+    }
+
+    public static class Phone extends Item {
+        public String text() {
+            return "📱 A mysterious voice reveals insights from the future";
+        }
+        public void use(PrintWriter out, String player) {
+            if (shells.size() <= 1) {
+                System.out.println("How unfortunate...");
+            } else {
+                int selected = 1 + new Random().nextInt(shells.size() - 1);
+                System.out.println("Shell #" + (selected + 1) + ", " + shells.get(selected));
+            }
+            sendMessage(out, "summary:", "Opponent used phone.\n");
+        }
+    }
+
+    public static class Medicine extends Item {
+        public String text() {
+            return "💊 50% chance to gain 2 HP. If not, lose 1 HP.";
+        }
+        public void use(PrintWriter out, String player) {
+            if (new Random().nextBoolean()) {
+                System.out.println("You gained 2 HP!");
+                sendMessage(out, "heal:", player + ",2,Opponent gained 2 HP!\n");
+            } else {
+                System.out.println("You collapsed! -1 HP");
+                sendMessage(out, "heal:", player + ",-1,Opponent collapsed! They lose 1 HP.");
+            }
+        }
+    }
+
+    public static class Inverter extends Item {
+        public String text() {
+            return "🪫 Reverses polarity of current shell.";
+        }
+        public void use(PrintWriter out, String player) {
+            if (!shells.isEmpty()) {
+                if (shells.getFirst() == Shell.live) {
+                    shells.set(0, Shell.blank);
+                } else{
+                    shells.set(0, Shell.live);
+                }
+            }
+            System.out.println("Inverted shell.");
+            sendMessage(out, "invert:", "\n");
         }
     }
 }

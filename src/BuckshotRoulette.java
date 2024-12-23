@@ -37,12 +37,17 @@ public class BuckshotRoulette {
     private static final AtomicBoolean gameOver = new AtomicBoolean(false);
     private static final Map<String, Item> numberToItem = new HashMap<>();
 
+    private static final Object mutex = new Object();
+
     static {
         numberToItem.put("3", new Item.MagnifyingGlass());
         numberToItem.put("4", new Item.Cigarette());
         numberToItem.put("5", new Item.Beer());
         numberToItem.put("6", new Item.Handsaw());
         numberToItem.put("7", new Item.Handcuffs());
+        numberToItem.put("8", new Item.Phone());
+        numberToItem.put("9", new Item.Medicine());
+        numberToItem.put("10", new Item.Inverter());
 
         for (Item item : numberToItem.values()) {
             items.put(item, 0);
@@ -82,8 +87,12 @@ public class BuckshotRoulette {
         int blank_shells = rand.nextInt(4) + 1;
 
         List<Shell> newShells = new ArrayList<>();
-        for (int i = 0; i < live_shells; i++) newShells.add(Shell.live);
-        for (int i = 0; i < blank_shells; i++) newShells.add(Shell.blank);
+        for (int i = 0; i < live_shells; i++) {
+            newShells.add(Shell.live);
+        }
+        for (int i = 0; i < blank_shells; i++) {
+            newShells.add(Shell.blank);
+        }
         Collections.shuffle(newShells);
 
         System.out.println("[INFO] Shotgun loaded with " + live_shells + " live shells and "
@@ -95,7 +104,6 @@ public class BuckshotRoulette {
         }
         sb.append("\n");
         sendMessage(out, "reload:", sb.toString());
-        sendMessage(out, "moreitems:", "\n");
         moreItems(out);
 
         return newShells;
@@ -188,74 +196,90 @@ public class BuckshotRoulette {
                 buffer.append(buff, 0, read);
 
                 int newlineIndex;
-                while ((newlineIndex = buffer.indexOf("\n")) != -1) {
-                    String line = buffer.substring(0, newlineIndex).trim();
-                    buffer.delete(0, newlineIndex + 1);
-                    if (line.isEmpty()) {
-                        continue;
-                    }
+                synchronized (mutex) {
+                    while ((newlineIndex = buffer.indexOf("\n")) != -1) {
+                        String line = buffer.substring(0, newlineIndex).trim();
+                        buffer.delete(0, newlineIndex + 1);
+                        if (line.isEmpty()) {
+                            continue;
+                        }
 
-                    if (line.startsWith("control:")) {
-                        String msg = line.substring(8);
-                        switch (msg) {
-                            case "game_over" -> {
-                                System.out.println("Game Over! Exiting...");
-                                System.exit(0);
+                        if (line.startsWith("control:")) {
+                            String msg = line.substring(8);
+                            switch (msg) {
+                                case "game_over" -> {
+                                    System.out.println("Game Over! Exiting...");
+                                    System.exit(0);
+                                }
+                                case "continue" ->
+                                        System.out.println(opponent + " got a blank! It's still their turn.");
+                                case "switch" -> {
+                                    // Opponent ended their turn
+                                }
+                                case "your_turn" ->
+                                    // It's now our turn
+                                        currentTurn(player_name, opponent, out);
+                                default -> System.out.println("[UNKNOWN CONTROL MESSAGE]: " + msg);
                             }
-                            case "continue" -> System.out.println(opponent + " got a blank! It's still their turn.");
-                            case "switch" -> {
-                                // Opponent ended their turn
+                        } else if (line.startsWith("summary:")) {
+                            String summary_msg = line.substring(8);
+                            System.out.print(summary_msg);
+                        } else if (line.startsWith("action:")) {
+                            // Remove a shell from our local vector if any
+                            if (!shells.isEmpty()) {
+                                shells.removeFirst();
                             }
-                            case "your_turn" ->
-                                // It's now our turn
-                                    currentTurn(player_name, opponent, out);
-                            default -> System.out.println("[UNKNOWN CONTROL MESSAGE]: " + msg);
+                            String action_msg = line.substring(7);
+                            System.out.println(opponent + "'s move: " + action_msg);
+                        } else if (line.startsWith("reload:")) {
+                            shells.clear();
+                            String reload_msg = line.substring(7);
+                            int live_count = 0;
+                            int blank_count = 0;
+                            for (char c : reload_msg.toCharArray()) {
+                                Shell s = Shell.fromValue(Character.getNumericValue(c));
+                                shells.add(s);
+                                if (s == Shell.live) {
+                                    live_count++;
+                                } else {
+                                    blank_count++;
+                                }
+                            }
+                            System.out.println("[INFO] Shotgun loaded with " + live_count + " live shells and "
+                                    + blank_count + " blank shells (order is hidden).\n");
+                        } else if (line.startsWith("damage:")) {
+                            String info_msg = line.substring("damage:".length());
+                            System.out.println(info_msg);
+                            String[] parts = info_msg.split(",");
+                            String target_player = parts[1];
+                            int new_hp = Integer.parseInt(parts[0]);
+                            hp.put(target_player, hp.get(target_player) - new_hp);
+                        } else if (line.startsWith("moreitems:")) {
+                            moreItems(out);
+                        } else if (line.startsWith("eject:")) {
+                            if (!shells.isEmpty()) {
+                                shells.removeFirst();
+                            }
+                            System.out.println(line.substring("eject:".length()));
+                        } else if (line.startsWith("heal:")) {
+                            String substring = line.substring("heal:".length()).trim();
+                            String[] params = substring.split(",");
+                            hp.put(params[0], hp.get(params[0]) + Integer.parseInt(params[1]));
+                            System.out.println(params[2]);
+                        } else if (line.startsWith("invert:")) {
+                            if (!shells.isEmpty()) {
+                                if (shells.getFirst() == Shell.live) {
+                                    shells.set(0, Shell.blank);
+                                } else{
+                                    shells.set(0, Shell.live);
+                                }
+                            }
+                            System.out.println("Opponent inverted shell.");
                         }
-                    } else if (line.startsWith("summary:")) {
-                        String summary_msg = line.substring(8);
-                        System.out.print(summary_msg);
-                    } else if (line.startsWith("action:")) {
-                        // Remove a shell from our local vector if any
-                        if (!shells.isEmpty()) {
-                            shells.removeFirst();
+                        else {
+                            // Unrecognized message
+                            System.out.println(line);
                         }
-                        String action_msg = line.substring(7);
-                        System.out.println(opponent + "'s move: " + action_msg);
-                    } else if (line.startsWith("reload:")) {
-                        shells.clear();
-                        String reload_msg = line.substring(7);
-                        int live_count = 0;
-                        int blank_count = 0;
-                        for (char c : reload_msg.toCharArray()) {
-                            Shell s = Shell.fromValue(Character.getNumericValue(c));
-                            shells.add(s);
-                            if (s == Shell.live) live_count++;
-                            else blank_count++;
-                        }
-                        System.out.println("[INFO] Shotgun loaded with " + live_count + " live shells and "
-                                + blank_count + " blank shells (order is hidden).\n");
-                    } else if (line.startsWith("damage:")) {
-                        String info_msg = line.substring("damage:".length());
-                        System.out.println(info_msg);
-                        String[] parts = info_msg.split(",");
-                        String target_player = parts[1];
-                        int new_hp = Integer.parseInt(parts[0]);
-                        hp.put(target_player, hp.get(target_player) - new_hp);
-                    } else if (line.startsWith("moreitems:")) {
-                        moreItems(out);
-                    } else if (line.startsWith("eject:")) {
-                        if (!shells.isEmpty()) {
-                            shells.removeFirst();
-                        }
-                        System.out.println(line.substring("eject:".length()));
-                    } else if (line.startsWith("heal:")) {
-                        String substring = line.substring("heal:".length()).trim();
-                        hp.put(substring, hp.get(substring) + 1);
-                        System.out.println("Opponent smoked 1 HP.");
-                    }
-                    else {
-                        // Unrecognized message
-                        System.out.println(line);
                     }
                 }
             }
@@ -269,16 +293,19 @@ public class BuckshotRoulette {
         Scanner sc = new Scanner(System.in);
         while (!gameOver.get()) {
             if (shells.isEmpty()) {
+                sendMessage(out, "moreitems:", "\n");
                 System.out.println("Reloading the shotgun!");
                 shells = loadShotgun(out);
             }
-            System.out.println("Options:");
-            System.out.println("1. Shoot Yourself");
-            System.out.println("2. Shoot Your Opponent");
-            for (Map.Entry<String, Item> entry : numberToItem.entrySet()) {
-                System.out.println(entry.getKey() + ". " + entry.getValue().text() + " (" + items.get(entry.getValue()) + ")");
+            synchronized (mutex) {
+                System.out.println("Options:");
+                System.out.println("1. Shoot Yourself");
+                System.out.println("2. Shoot Your Opponent");
+                for (Map.Entry<String, Item> entry : numberToItem.entrySet()) {
+                    System.out.println(entry.getKey() + ". " + entry.getValue().text() + " (" + items.get(entry.getValue()) + ")");
+                }
+                System.out.print("Choose an option: ");
             }
-            System.out.print("Choose an option: ");
             String choice = sc.nextLine().trim();
 
             if (choice.equals("1") || choice.equals("2")) {
