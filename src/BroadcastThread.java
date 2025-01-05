@@ -5,7 +5,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 
 class BroadcastThread extends Thread {
-    public static final int BROADCAST_PORT = 4446; // Arbitrary, but must match the client's listener
+    public static final int BROADCAST_PORT = 0x60D;
     private final String serverName;
     private final int gamePort;
     private volatile boolean running = true;
