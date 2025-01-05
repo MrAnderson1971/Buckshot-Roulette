@@ -135,7 +135,7 @@ public class BuckshotRoulette {
             return new Triple<>(shells, hp, "switch");
         }
 
-        Shell shell = shells.removeFirst();
+        Shell shell = shells.remove(0);
         System.out.println(shooter + " pulls the trigger... it's a " + shell.name() + " shell!");
         sendMessage(out, "action:", shooter + " fired a " + shell.name() + " shell at " + target + "!");
 
@@ -227,7 +227,7 @@ public class BuckshotRoulette {
                         } else if (line.startsWith("action:")) {
                             // Remove a shell from our local vector if any
                             if (!shells.isEmpty()) {
-                                shells.removeFirst();
+                                shells.remove(0);
                             }
                             String action_msg = line.substring(7);
                             System.out.println(opponent + "'s move: " + action_msg);
@@ -258,7 +258,7 @@ public class BuckshotRoulette {
                             moreItems(out);
                         } else if (line.startsWith("eject:")) {
                             if (!shells.isEmpty()) {
-                                shells.removeFirst();
+                                shells.remove(0);
                             }
                             System.out.println(line.substring("eject:".length()));
                         } else if (line.startsWith("heal:")) {
@@ -268,7 +268,7 @@ public class BuckshotRoulette {
                             System.out.println(params[2]);
                         } else if (line.startsWith("invert:")) {
                             if (!shells.isEmpty()) {
-                                if (shells.getFirst() == Shell.live) {
+                                if (shells.get(0) == Shell.live) {
                                     shells.set(0, Shell.blank);
                                 } else{
                                     shells.set(0, Shell.live);

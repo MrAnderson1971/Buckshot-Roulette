@@ -14,7 +14,7 @@ public abstract class Item {
             return "🔍 Reveals the next shell.";
         }
         public void use(PrintWriter out, String player) {
-            System.out.println("The next item is a " + shells.getFirst().toString() + " shell.\n");
+            System.out.println("The next item is a " + shells.get(0).toString() + " shell.\n");
             sendMessage(out, "summary:", "Opponent used magnifying glass (very interesting)...\n");
         }
     }
@@ -46,8 +46,8 @@ public abstract class Item {
             return "🍺 Ejects the current shell.";
         }
         public void use(PrintWriter out, String player) {
-            Shell first = shells.getFirst();
-            shells.removeFirst();
+            Shell first = shells.get(0);
+            shells.remove(0);
             System.out.println("Ejected a " + first.toString() + " shell.\n");
             sendMessage(out, "eject:", "Opponent ejected a " + first + " shell.\n");
         }
@@ -100,7 +100,7 @@ public abstract class Item {
         }
         public void use(PrintWriter out, String player) {
             if (!shells.isEmpty()) {
-                if (shells.getFirst() == Shell.live) {
+                if (shells.get(0) == Shell.live) {
                     shells.set(0, Shell.blank);
                 } else{
                     shells.set(0, Shell.live);
