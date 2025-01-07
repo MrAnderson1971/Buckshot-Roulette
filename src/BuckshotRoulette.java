@@ -9,7 +9,6 @@ import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 
 public class BuckshotRoulette {
@@ -34,7 +33,6 @@ public class BuckshotRoulette {
     static int damage = 1;
     static final Map<Item, Integer> items = new HashMap<>();
     static boolean cuffedOpponent = false;
-    private static final AtomicBoolean gameOver = new AtomicBoolean(false);
     private static final Map<String, Item> numberToItem = new HashMap<>();
 
     private static final Object mutex = new Object();
@@ -187,7 +185,7 @@ public class BuckshotRoulette {
         StringBuilder buffer = new StringBuilder();
         try {
             char[] buff = new char[BUFFER_SIZE];
-            while (!gameOver.get()) {
+            while (true) {
                 int read = in.read(buff);
                 if (read == -1) {
                     System.out.println("Connection lost. Exiting...");
@@ -291,7 +289,7 @@ public class BuckshotRoulette {
 
     private static void currentTurn(String player, String opponent, PrintWriter out) {
         Scanner sc = new Scanner(System.in);
-        while (!gameOver.get()) {
+        while (true) {
             if (shells.isEmpty()) {
                 sendMessage(out, "moreitems:", "\n");
                 System.out.println("Reloading the shotgun!");
@@ -345,7 +343,7 @@ public class BuckshotRoulette {
     }
 
     public static void main(String[] args) {
-        System.out.println("Welcome to P2P Buckshot Roulette!\n");
+        System.out.println("Welcome to Buckshot Roulette!\n");
         Scanner sc = new Scanner(System.in);
 
         System.out.print("Enter your name: ");
