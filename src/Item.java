@@ -85,9 +85,11 @@ public abstract class Item {
         }
         public void use(PrintWriter out, String player) {
             if (new Random().nextBoolean()) {
+                hp.put(player, hp.get(player) + 2);
                 System.out.println("You gained 2 HP!");
                 sendMessage(out, "heal:", player + ",2,Opponent gained 2 HP!\n");
             } else {
+                hp.put(player, hp.get(player) - 1);
                 System.out.println("You collapsed! -1 HP");
                 sendMessage(out, "heal:", player + ",-1,Opponent collapsed! They lose 1 HP.");
             }

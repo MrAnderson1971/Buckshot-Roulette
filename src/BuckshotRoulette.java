@@ -335,8 +335,9 @@ public class BuckshotRoulette {
                 items.put(numberToItem.get(choice), items.get(numberToItem.get(choice)) - 1);
             } else if (numberToItem.containsKey(choice)) {
                 System.out.println("You don't have " + numberToItem.get(choice).getClass().getName() + "!");
-            }
-            else {
+            } else if (choice.equals("cheat")) {
+                System.out.println(shells);
+            } else {
                 System.out.println("Invalid choice.");
             }
         }
