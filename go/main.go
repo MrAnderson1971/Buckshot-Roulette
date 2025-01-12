@@ -1,0 +1,475 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"math/rand"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+)
+
+const (
+	DISCOVERY_PORT = 0x60D
+	PORT           = 0xDEA
+	BUFFER_SIZE    = 1024
+)
+
+type Shell struct {
+	value int
+}
+
+func (s Shell) String() string {
+	if s.value == 0 {
+		return "live"
+	}
+	return "blank"
+}
+
+type DiscoveryBroadcast struct {
+	name string
+	stop atomic.Bool
+}
+
+type Settings_ struct {
+	damage         int
+	cuffedOpponent bool
+}
+
+var gameOver = make(chan bool)
+var Shells = make([]Shell, 0, 8)
+var Hp map[string]int
+var Settings Settings_
+var connection net.Conn
+var numberToItem = []Item{
+	&MagnifyingGlass{},
+	&Cigarette{},
+	&Beer{},
+	&Handsaw{},
+	&Handcuffs{},
+	&Phone{},
+	&Medicine{},
+	&Inverter{},
+}
+var items = map[Item]int{
+	numberToItem[0]: 0,
+	numberToItem[1]: 0,
+	numberToItem[2]: 0,
+	numberToItem[3]: 0,
+	numberToItem[4]: 0,
+	numberToItem[5]: 0,
+	numberToItem[6]: 0,
+	numberToItem[7]: 0,
+}
+
+func RemoveFirst[T any](s *[]T) {
+	*s = (*s)[1:]
+}
+
+func (d *DiscoveryBroadcast) Start(name string) {
+	d.name = name
+	d.stop.Store(false)
+	go func() error {
+		conn, err := net.Dial("udp", fmt.Sprintf("255.255.255.255:%d", DISCOVERY_PORT))
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		for !d.stop.Load() {
+			message := fmt.Sprintf("BUCKSHOT_ROULETTE:%s:%d\n", d.name, PORT)
+			_, err = conn.Write([]byte(message))
+			if err != nil {
+				return err
+			}
+			time.Sleep(2 * time.Second)
+		}
+		return nil
+	}()
+}
+
+func (d *DiscoveryBroadcast) Close() {
+	d.stop.Store(true)
+}
+
+func discoverHost() (string, string, string, error) {
+	addr := net.UDPAddr{
+		Port: DISCOVERY_PORT,
+		IP:   net.IPv4zero,
+	}
+	udpConn, err := net.ListenUDP("udp4", &addr)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer udpConn.Close()
+	err = udpConn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
+		return "", "", "", err
+	}
+
+	buffer := make([]byte, BUFFER_SIZE)
+
+	err = udpConn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
+		return "", "", "", err
+	}
+	for {
+		n, addr, err := udpConn.ReadFromUDP(buffer)
+		if err != nil {
+			return "", "", "", err
+		}
+		message := string(buffer[:n])
+		if strings.HasPrefix(message, "BUCKSHOT_ROULETTE:") {
+			parts := strings.Split(message, ":")
+			if len(parts) == 3 {
+				hostName := parts[1]
+				port := parts[2]
+				fmt.Printf("Discovered game hosted by %s at %s:%s\n", hostName, addr.IP, port)
+				return addr.IP.String(), port, hostName, nil
+			}
+		}
+	}
+}
+
+func SendMessage(message string) {
+	_, err := connection.Write([]byte(message))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func splitLine(buffer string) (line, rest string) {
+	idx := strings.Index(buffer, "\n")
+	if idx == -1 {
+		return buffer, ""
+	}
+	return buffer[:idx], buffer[idx+1:]
+}
+
+func moreItems() {
+	tempItems := make([]Item, 0, len(numberToItem))
+	for _, stuff := range numberToItem {
+		tempItems = append(tempItems, stuff)
+	}
+	chosenItems := make([]Item, 0)
+	for i := 0; i < 2; i++ {
+		selectedItem := rand.Intn(len(tempItems))
+		chosenItems = append(chosenItems, tempItems[selectedItem])
+		items[numberToItem[selectedItem]]++
+	}
+	sb := ""
+	for _, chosenItem := range chosenItems {
+		sb += chosenItem.Name() + ", "
+	}
+	sb += "."
+	fmt.Println("You get " + sb)
+	SendMessage("summary:Opponent gets " + sb + "\n")
+}
+
+func handleIncomingMessages(player string, opponent string) {
+	defer func() { gameOver <- true }()
+	reader := bufio.NewReader(connection)
+	buffer := ""
+	for {
+		data, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error reading from connection: %s\n", err)
+			os.Exit(1)
+		}
+		buffer += data
+
+		for strings.Contains(buffer, "\n") {
+			var line string
+			line, buffer = splitLine(buffer)
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			switch {
+			case strings.HasPrefix(line, "control:"):
+				msg := strings.TrimPrefix(line, "control:")
+				switch {
+				case strings.HasPrefix(msg, "game_over"):
+					fmt.Println("Game over!")
+					os.Exit(0)
+				case strings.HasPrefix(msg, "continue"):
+					fmt.Println(opponent + " got a blank! It's still their turn.")
+				case strings.HasPrefix(msg, "your_turn"):
+					currentTurn(player, opponent)
+				default:
+					fmt.Println(msg)
+				}
+			case strings.HasPrefix(line, "summary"):
+				fmt.Println(strings.TrimPrefix(line, "summary:"))
+			case strings.HasPrefix(line, "action:"):
+				RemoveFirst(&Shells)
+				fmt.Println(opponent + "'s move: " + strings.TrimPrefix(line, "action:"))
+			case strings.HasPrefix(line, "reload:"):
+				Shells = Shells[:0]
+				liveCount := 0
+				blankCount := 0
+				msg := strings.TrimPrefix(line, "reload:")
+				for i := 0; i < len(msg); i++ {
+					atoi, err := strconv.Atoi(string(msg[i]))
+					if err != nil {
+						fmt.Printf("Error converting %s to int: %s\n", msg[i], err)
+						os.Exit(1)
+					}
+					Shells = append(Shells, Shell{atoi})
+					if atoi == 0 {
+						liveCount++
+					} else if atoi == 1 {
+						blankCount++
+					} else {
+						fmt.Printf("Unknown shell %d\n", atoi)
+						os.Exit(1)
+					}
+				}
+				fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n",
+					liveCount, blankCount)
+			case strings.HasPrefix(line, "damage:"):
+				msg := strings.TrimPrefix(line, "damage:")
+				parts := strings.Split(msg, ",")
+				newHp, _ := strconv.Atoi(parts[0])
+				target := parts[1]
+				Hp[target] = newHp
+			case strings.HasPrefix(line, "moreitems:"):
+				moreItems()
+			case strings.HasPrefix(line, "heal:"):
+				msg := strings.Split(strings.TrimPrefix(line, "heal:"), ",")
+				newHp, _ := strconv.Atoi(msg[1])
+				Hp[msg[0]] += newHp
+				fmt.Println(msg[2])
+			case strings.HasPrefix(line, "eject:"):
+				if len(Shells) > 0 {
+					RemoveFirst(&Shells)
+				}
+				fmt.Println(strings.TrimPrefix(line, "eject:"))
+			case strings.HasPrefix(line, "invert:"):
+				if len(Shells) > 0 {
+					if Shells[0].value == 0 {
+						Shells[0] = Shell{1}
+					} else {
+						Shells[0] = Shell{0}
+					}
+				}
+				fmt.Println("Opponent inverted shell.")
+			default:
+				fmt.Println(line)
+			}
+		}
+	}
+}
+
+func takeTurn(target string, other string, shooter string) string {
+	shell := Shells[0]
+	RemoveFirst(&Shells)
+	var action string
+	fmt.Printf("%s pulls the trigger, it's a %s shell!\n", shooter, shell.String())
+	SendMessage("action:" + shooter + " fired a " + shell.String() + " shell at " + target + "!\n")
+
+	if shell.value == 0 { // live
+		Hp[target] -= Settings.damage
+		fmt.Printf("%s's HP: %d\n", target, Hp[target])
+		SendMessage(fmt.Sprintf("summary:%s lost %d HP. Remaining HP: %d\n", target, Settings.damage, Hp[target]))
+		SendMessage(fmt.Sprintf("damage:%d,%s\n", Settings.damage, target))
+		Settings.damage = 1
+		if Hp[target] == 0 {
+			fmt.Println("Game over!")
+			SendMessage("game_over:")
+			gameOver <- true
+			os.Exit(0)
+		}
+
+		if Settings.cuffedOpponent {
+			fmt.Println("Your opponent is cuffed!")
+			action = "continue"
+		} else {
+			action = "switch"
+		}
+	} else {
+		if shooter == target {
+			action = "continue"
+		} else {
+			if Settings.cuffedOpponent {
+				fmt.Println("Your opponent is cuffed!")
+				action = "continue"
+			} else {
+				action = "switch"
+			}
+		}
+	}
+	return action
+}
+
+func currentTurn(player string, opponent string) {
+	for {
+		if len(Shells) == 0 {
+			SendMessage("moreitems:\n")
+			fmt.Println("Reloading the shotgun!")
+			loadShotgun()
+		}
+		fmt.Println("Options:")
+		fmt.Println("1. Shoot yourself")
+		fmt.Println("2. Shoot your opponent")
+		for i, item := range numberToItem {
+			fmt.Printf("%d: %s (%d)\n", i+3, item.Description(), items[item])
+		}
+		fmt.Print("Choose an option: ")
+		var choice string
+		fmt.Scanln(&choice)
+		if choice == "1" || choice == "2" {
+			var action string
+			if choice == "1" {
+				action = takeTurn(player, opponent, player)
+			} else {
+				action = takeTurn(opponent, player, player)
+			}
+			if action == "switch" {
+				SendMessage("control:your_turn\n")
+				break
+			}
+			if action == "continue" {
+				fmt.Printf("%s gets another turn!\n", player)
+			}
+		} else if choice == "cheat" {
+			fmt.Println(Shells)
+		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
+			choiceToInt < len(numberToItem)+3 && items[numberToItem[choiceToInt-3]] > 0 {
+			numberToItem[choiceToInt-3].Use(player)
+			items[numberToItem[choiceToInt-3]]--
+		} else if choiceToInt, err := strconv.Atoi(choice); err == nil {
+			fmt.Println("You don't have " + numberToItem[choiceToInt-3].Name())
+		} else {
+			fmt.Println("Invalid choice. Please enter 1 or 2")
+		}
+	}
+}
+
+func loadShotgun() {
+	liveShells := rand.Intn(3) + 1
+	blankShells := rand.Intn(3) + 1
+	Shells = append(make([]Shell, liveShells), make([]Shell, blankShells)...)
+	rand.Shuffle(len(Shells), func(i, j int) {
+		Shells[i], Shells[j] = Shells[j], Shells[i]
+	})
+	for i := 0; i < liveShells; i++ {
+		Shells[i] = Shell{value: 0} // Live shell
+	}
+	for i := liveShells; i < liveShells+blankShells; i++ {
+		Shells[i] = Shell{value: 1} // Blank shell
+	}
+	fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n", liveShells, blankShells)
+	shellValues := make([]string, len(Shells))
+	for i, shell := range Shells {
+		shellValues[i] = strconv.Itoa(shell.value)
+	}
+	msg := "reload:" + strings.Join(shellValues, "") + "\n"
+	connection.Write([]byte(msg))
+	moreItems()
+}
+
+func main() {
+	var playerName string
+	var opponentName string
+	defer close(gameOver)
+	defer func() {
+		if connection != nil {
+			connection.Close()
+		}
+	}()
+
+	Settings = Settings_{1, false}
+
+	fmt.Print("Enter your name: ")
+	_, err := fmt.Scanln(&playerName)
+	if err != nil {
+		return
+	}
+	fmt.Print("Do you want to host or join? (host/join): ")
+	var mode string
+	_, err = fmt.Scanln(&mode)
+	for mode != "host" && mode != "join" {
+		fmt.Print("Do you want to host or join? (host/join): ")
+		var mode string
+		_, err = fmt.Scanln(&mode)
+	}
+
+	if mode == "join" {
+		var ipAddr string
+		ipAddr, _, opponentName, err = discoverHost()
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+			return
+		}
+		connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, PORT))
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+			return
+		}
+		fmt.Printf("Connected to %s\n", ipAddr)
+		for playerName == opponentName {
+			fmt.Print("Name cannot be opponent playerName")
+			_, err := fmt.Scanln(&playerName)
+			if err != nil {
+				return
+			}
+		}
+		_, err = connection.Write([]byte(playerName))
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+			return
+		}
+	} else if mode == "host" {
+		func() {
+			discoveryBroadcast := &DiscoveryBroadcast{}
+			discoveryBroadcast.Start(playerName)
+			defer discoveryBroadcast.Close()
+			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", PORT))
+			if err != nil {
+				fmt.Printf("Error: %s\n", err)
+				return
+			}
+			defer listener.Close()
+			connection, err = listener.Accept()
+			if err != nil {
+				return
+			}
+			addr := connection.LocalAddr().String()
+			fmt.Printf("Connected to %s\n", addr)
+			_, err = connection.Write([]byte(playerName + "\n"))
+			if err != nil {
+				fmt.Printf("Error: %s\n", err)
+				return
+			}
+
+			reader := bufio.NewReader(connection)
+			opponentName, err = reader.ReadString('\n')
+			if err != nil {
+				fmt.Printf("Error reading opponent's name: %s\n", err)
+				return
+			}
+			opponentName = strings.TrimSpace(opponentName)
+		}()
+	}
+	Hp = make(map[string]int)
+	Hp[playerName] = 5
+	Hp[opponentName] = 5
+	fmt.Printf("%s's HP: %d\n", playerName, Hp[playerName])
+	fmt.Printf("%s's HP: %d\n", opponentName, Hp[opponentName])
+
+	go handleIncomingMessages(playerName, opponentName)
+	if mode == "host" {
+		currentTurn(playerName, opponentName)
+		fmt.Println("Waiting for your opponent's turn...")
+	} else if mode == "join" {
+		fmt.Println("Waiting for your turn...")
+	}
+
+	select {
+	case <-gameOver:
+	}
+}
