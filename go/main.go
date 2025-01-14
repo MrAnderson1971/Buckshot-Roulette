@@ -341,7 +341,8 @@ func currentTurn(player string, opponent string) {
 			choiceToInt < len(numberToItem)+3 && items[numberToItem[choiceToInt-3]] > 0 {
 			numberToItem[choiceToInt-3].Use(player)
 			items[numberToItem[choiceToInt-3]]--
-		} else if choiceToInt, err := strconv.Atoi(choice); err == nil {
+		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
+			choiceToInt < len(numberToItem)+3 {
 			fmt.Println("You don't have " + numberToItem[choiceToInt-3].Name())
 		} else {
 			fmt.Println("Invalid choice. Please enter 1 or 2")
@@ -418,7 +419,7 @@ func main() {
 				return
 			}
 		}
-		_, err = connection.Write([]byte(playerName))
+		_, err = connection.Write([]byte(playerName + "\n"))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 			return
