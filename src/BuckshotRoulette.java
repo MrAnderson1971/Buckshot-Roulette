@@ -36,6 +36,8 @@ public class BuckshotRoulette {
     private static final Map<String, Item> numberToItem = new HashMap<>();
 
     private static final Object mutex = new Object();
+    static CountDownLatch turnLatch = new CountDownLatch(1);
+    static volatile boolean gameOver = false;
 
     static {
         numberToItem.put("3", new Item.MagnifyingGlass());
@@ -146,9 +148,10 @@ public class BuckshotRoulette {
             damage = 1;
 
             if (hp.get(target) <= 0) {
-                System.out.println(target + " has been eliminated! " + other + " wins!");
-                sendMessage(out, "control:", "game_over");
-                System.exit(0);
+                String message = target + " has been eliminated! " + other + " wins!\n";
+                System.out.println(message);
+                sendMessage(out, "game_over:", message);
+                turnLatch.countDown();
             }
             if (cuffedOpponent) {
                 cuffedOpponent = false;
@@ -179,13 +182,15 @@ public class BuckshotRoulette {
         return new Triple<>(shells, hp, action);
     }
 
-    private static void handleIncomingMessages(BufferedReader in, PrintWriter out,
-                                               String opponent,
-                                               String player_name) {
+    private static void handleIncomingMessages(BufferedReader in, PrintWriter out, String opponent, String player_name) {
         StringBuilder buffer = new StringBuilder();
         try {
             char[] buff = new char[BUFFER_SIZE];
-            while (true) {
+            while (!gameOver) {
+                if (!in.ready()) {
+                    Thread.sleep(100);
+                    continue;
+                }
                 int read = in.read(buff);
                 if (read == -1) {
                     System.out.println("Connection lost. Exiting...");
@@ -205,10 +210,6 @@ public class BuckshotRoulette {
                         if (line.startsWith("control:")) {
                             String msg = line.substring(8);
                             switch (msg) {
-                                case "game_over" -> {
-                                    System.out.println("Game Over! Exiting...");
-                                    System.exit(0);
-                                }
                                 case "continue" ->
                                         System.out.println(opponent + " got a blank! It's still their turn.");
                                 case "switch" -> {
@@ -219,6 +220,9 @@ public class BuckshotRoulette {
                                         currentTurn(player_name, opponent, out);
                                 default -> System.out.println("[UNKNOWN CONTROL MESSAGE]: " + msg);
                             }
+                        } else if (line.startsWith("game_over:")) {
+                            System.out.println(line.substring("game_over:".length()));
+                            turnLatch.countDown();
                         } else if (line.startsWith("summary:")) {
                             String summary_msg = line.substring(8);
                             System.out.print(summary_msg);
@@ -281,7 +285,7 @@ public class BuckshotRoulette {
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             System.out.println("Connection lost. Exiting...");
             System.exit(1);
         }
@@ -360,8 +364,6 @@ public class BuckshotRoulette {
         String opponent_name;
         BufferedReader in;
         PrintWriter out;
-
-        CountDownLatch turnLatch = new CountDownLatch(1);
 
         try {
             if (mode.equals("host")) {
@@ -469,11 +471,12 @@ public class BuckshotRoulette {
             if (mode.equals("host")) {
                 currentTurn(player_name, opponent_name, out);
                 System.out.println("Waiting for your opponent's turn...");
-                turnLatch.await();
             } else {
                 System.out.println("Waiting for your turn...");
-                turnLatch.await();
             }
+            turnLatch.await();
+            gameOver = true;
+            sc.nextLine();
 
         } catch (Exception e) {
             e.printStackTrace();

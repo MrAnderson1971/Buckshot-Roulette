@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -39,7 +41,7 @@ type Settings_ struct {
 	cuffedOpponent bool
 }
 
-var gameOver = make(chan bool)
+var gameOver = make(chan string)
 var Shells = make([]Shell, 0, 8)
 var Hp map[string]int
 var Settings Settings_
@@ -72,21 +74,20 @@ func RemoveFirst[T any](s *[]T) {
 func (d *DiscoveryBroadcast) Start(name string) {
 	d.name = name
 	d.stop.Store(false)
-	go func() error {
+	go func() {
 		conn, err := net.Dial("udp", fmt.Sprintf("255.255.255.255:%d", DISCOVERY_PORT))
 		if err != nil {
-			return err
+			panic(fmt.Sprintf("Error %s", err))
 		}
 		defer conn.Close()
 		for !d.stop.Load() {
 			message := fmt.Sprintf("BUCKSHOT_ROULETTE:%s:%d\n", d.name, PORT)
 			_, err = conn.Write([]byte(message))
 			if err != nil {
-				return err
+				panic(fmt.Sprintf("Error %s", err))
 			}
 			time.Sleep(2 * time.Second)
 		}
-		return nil
 	}()
 }
 
@@ -168,97 +169,108 @@ func moreItems() {
 	SendMessage("summary:Opponent gets " + sb + "\n")
 }
 
-func handleIncomingMessages(player string, opponent string) {
-	defer func() { gameOver <- true }()
+func handleIncomingMessages(ctx context.Context, player string, opponent string) {
 	reader := bufio.NewReader(connection)
 	buffer := ""
 	for {
-		data, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error reading from connection: %s\n", err)
-			os.Exit(1)
-		}
-		buffer += data
-
-		for strings.Contains(buffer, "\n") {
-			var line string
-			line, buffer = splitLine(buffer)
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := connection.SetReadDeadline(time.Now().Add(1 * time.Second))
+			if err != nil {
+				panic(fmt.Sprintf("Error %s", err))
 			}
+			data, err := reader.ReadString('\n')
+			if err != nil {
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					// timeout loop back again
+					continue
+				}
+				panic(fmt.Sprintf("Error %s", err))
+			}
+			buffer += data
 
-			switch {
-			case strings.HasPrefix(line, "control:"):
-				msg := strings.TrimPrefix(line, "control:")
+			for strings.Contains(buffer, "\n") {
+				var line string
+				line, buffer = splitLine(buffer)
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
 				switch {
-				case strings.HasPrefix(msg, "game_over"):
-					fmt.Println("Game over!")
-					os.Exit(0)
-				case strings.HasPrefix(msg, "continue"):
-					fmt.Println(opponent + " got a blank! It's still their turn.")
-				case strings.HasPrefix(msg, "your_turn"):
-					currentTurn(player, opponent)
-				default:
-					fmt.Println(msg)
-				}
-			case strings.HasPrefix(line, "summary"):
-				fmt.Println(strings.TrimPrefix(line, "summary:"))
-			case strings.HasPrefix(line, "action:"):
-				RemoveFirst(&Shells)
-				fmt.Println(opponent + "'s move: " + strings.TrimPrefix(line, "action:"))
-			case strings.HasPrefix(line, "reload:"):
-				Shells = Shells[:0]
-				liveCount := 0
-				blankCount := 0
-				msg := strings.TrimPrefix(line, "reload:")
-				for i := 0; i < len(msg); i++ {
-					atoi, err := strconv.Atoi(string(msg[i]))
-					if err != nil {
-						fmt.Printf("Error converting %s to int: %s\n", msg[i], err)
-						os.Exit(1)
+				case strings.HasPrefix(line, "control:"):
+					msg := strings.TrimPrefix(line, "control:")
+					switch {
+					case strings.HasPrefix(msg, "continue"):
+						fmt.Println(opponent + " got a blank! It's still their turn.")
+					case strings.HasPrefix(msg, "your_turn"):
+						currentTurn(player, opponent)
+					default:
+						fmt.Println(msg)
 					}
-					Shells = append(Shells, Shell{atoi})
-					if atoi == 0 {
-						liveCount++
-					} else if atoi == 1 {
-						blankCount++
-					} else {
-						fmt.Printf("Unknown shell %d\n", atoi)
-						os.Exit(1)
-					}
-				}
-				fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n",
-					liveCount, blankCount)
-			case strings.HasPrefix(line, "damage:"):
-				msg := strings.TrimPrefix(line, "damage:")
-				parts := strings.Split(msg, ",")
-				newHp, _ := strconv.Atoi(parts[0])
-				target := parts[1]
-				Hp[target] = newHp
-			case strings.HasPrefix(line, "moreitems:"):
-				moreItems()
-			case strings.HasPrefix(line, "heal:"):
-				msg := strings.Split(strings.TrimPrefix(line, "heal:"), ",")
-				newHp, _ := strconv.Atoi(msg[1])
-				Hp[msg[0]] += newHp
-				fmt.Println(msg[2])
-			case strings.HasPrefix(line, "eject:"):
-				if len(Shells) > 0 {
+				case strings.HasPrefix(line, "game_over:"):
+					gameOver <- strings.TrimPrefix(line, "game_over:")
+				case strings.HasPrefix(line, "summary:"):
+					fmt.Println(strings.TrimPrefix(line, "summary:"))
+				case strings.HasPrefix(line, "action:"):
 					RemoveFirst(&Shells)
-				}
-				fmt.Println(strings.TrimPrefix(line, "eject:"))
-			case strings.HasPrefix(line, "invert:"):
-				if len(Shells) > 0 {
-					if Shells[0].value == 0 {
-						Shells[0] = Shell{1}
-					} else {
-						Shells[0] = Shell{0}
+					fmt.Println(opponent + "'s move: " + strings.TrimPrefix(line, "action:"))
+				case strings.HasPrefix(line, "reload:"):
+					Shells = Shells[:0]
+					liveCount := 0
+					blankCount := 0
+					msg := strings.TrimPrefix(line, "reload:")
+					for i := 0; i < len(msg); i++ {
+						atoi, err := strconv.Atoi(string(msg[i]))
+						if err != nil {
+							fmt.Printf("Error converting %s to int: %s\n", msg[i], err)
+							os.Exit(1)
+						}
+						Shells = append(Shells, Shell{atoi})
+						if atoi == 0 {
+							liveCount++
+						} else if atoi == 1 {
+							blankCount++
+						} else {
+							fmt.Printf("Unknown shell %d\n", atoi)
+							os.Exit(1)
+						}
 					}
+					fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n",
+						liveCount, blankCount)
+				case strings.HasPrefix(line, "damage:"):
+					msg := strings.TrimPrefix(line, "damage:")
+					parts := strings.Split(msg, ",")
+					newHp, _ := strconv.Atoi(parts[0])
+					target := parts[1]
+					Hp[target] -= newHp
+				case strings.HasPrefix(line, "moreitems:"):
+					moreItems()
+				case strings.HasPrefix(line, "heal:"):
+					msg := strings.Split(strings.TrimPrefix(line, "heal:"), ",")
+					newHp, _ := strconv.Atoi(msg[1])
+					Hp[msg[0]] += newHp
+					fmt.Println(msg[2])
+				case strings.HasPrefix(line, "eject:"):
+					if len(Shells) > 0 {
+						RemoveFirst(&Shells)
+					}
+					fmt.Println(strings.TrimPrefix(line, "eject:"))
+				case strings.HasPrefix(line, "invert:"):
+					if len(Shells) > 0 {
+						if Shells[0].value == 0 {
+							Shells[0] = Shell{1}
+						} else {
+							Shells[0] = Shell{0}
+						}
+					}
+					fmt.Println("Opponent inverted shell.")
+				default:
+					fmt.Println(line)
 				}
-				fmt.Println("Opponent inverted shell.")
-			default:
-				fmt.Println(line)
 			}
 		}
 	}
@@ -278,10 +290,9 @@ func takeTurn(target string, other string, shooter string) string {
 		SendMessage(fmt.Sprintf("damage:%d,%s\n", Settings.damage, target))
 		Settings.damage = 1
 		if Hp[target] == 0 {
-			fmt.Println("Game over!")
-			SendMessage("game_over:")
-			gameOver <- true
-			os.Exit(0)
+			message := fmt.Sprintf("Game over! %s wins.\n", other)
+			SendMessage("game_over:" + message)
+			gameOver <- message
 		}
 
 		if Settings.cuffedOpponent {
@@ -369,7 +380,10 @@ func loadShotgun() {
 		shellValues[i] = strconv.Itoa(shell.value)
 	}
 	msg := "reload:" + strings.Join(shellValues, "") + "\n"
-	connection.Write([]byte(msg))
+	_, err := connection.Write([]byte(msg))
+	if err != nil {
+		panic(fmt.Sprintf("Error %s", err))
+	}
 	moreItems()
 }
 
@@ -382,6 +396,9 @@ func main() {
 			connection.Close()
 		}
 	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	Settings = Settings_{1, false}
 
@@ -403,26 +420,23 @@ func main() {
 		var ipAddr string
 		ipAddr, _, opponentName, err = discoverHost()
 		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-			return
+			panic(fmt.Sprintf("Error %s", err))
 		}
 		connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, PORT))
 		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-			return
+			panic(fmt.Sprintf("Error %s", err))
 		}
 		fmt.Printf("Connected to %s\n", ipAddr)
 		for playerName == opponentName {
 			fmt.Print("Name cannot be opponent playerName")
 			_, err := fmt.Scanln(&playerName)
 			if err != nil {
-				return
+				panic(fmt.Sprintf("Error %s", err))
 			}
 		}
 		_, err = connection.Write([]byte(playerName + "\n"))
 		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-			return
+			panic(fmt.Sprintf("Error %s", err))
 		}
 	} else if mode == "host" {
 		func() {
@@ -431,27 +445,24 @@ func main() {
 			defer discoveryBroadcast.Close()
 			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", PORT))
 			if err != nil {
-				fmt.Printf("Error: %s\n", err)
-				return
+				panic(fmt.Sprintf("Error %s", err))
 			}
 			defer listener.Close()
 			connection, err = listener.Accept()
 			if err != nil {
-				return
+				panic(fmt.Sprintf("Error %s", err))
 			}
 			addr := connection.LocalAddr().String()
 			fmt.Printf("Connected to %s\n", addr)
 			_, err = connection.Write([]byte(playerName + "\n"))
 			if err != nil {
-				fmt.Printf("Error: %s\n", err)
-				return
+				panic(fmt.Sprintf("Error %s", err))
 			}
 
 			reader := bufio.NewReader(connection)
 			opponentName, err = reader.ReadString('\n')
 			if err != nil {
-				fmt.Printf("Error reading opponent's name: %s\n", err)
-				return
+				panic(fmt.Sprintf("Error %s", err))
 			}
 			opponentName = strings.TrimSpace(opponentName)
 		}()
@@ -462,7 +473,7 @@ func main() {
 	fmt.Printf("%s's HP: %d\n", playerName, Hp[playerName])
 	fmt.Printf("%s's HP: %d\n", opponentName, Hp[opponentName])
 
-	go handleIncomingMessages(playerName, opponentName)
+	go handleIncomingMessages(ctx, playerName, opponentName)
 	if mode == "host" {
 		currentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
@@ -471,6 +482,9 @@ func main() {
 	}
 
 	select {
-	case <-gameOver:
+	case message := <-gameOver:
+		fmt.Println(message)
+		cancel()
+		fmt.Scanln()
 	}
 }
