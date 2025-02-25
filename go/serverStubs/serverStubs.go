@@ -58,7 +58,7 @@ func moreItems(argData []byte) (out []byte, err error) {
 
 func yourTurn(argData []byte) (out []byte, err error) {
 	return transport.ServerStub(argData, func(args rpc.YourTurnArgs) any {
-		game.CurrentTurn(args.Opponent, args.Player) // reverse
+		go game.CurrentTurn(args.Opponent, args.Player) // reverse
 		return nil
 	})
 }

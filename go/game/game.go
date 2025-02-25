@@ -79,7 +79,7 @@ func TakeTurn(target string, other string, shooter string) string {
 		clientStubs.Summary(fmt.Sprintf("%s lost %d HP. Remaining HP: %d\n", target, Settings.Damage, Hp[target]))
 		clientStubs.Damage(Settings.Damage, target)
 		Settings.Damage = 1
-		if Hp[target] == 0 {
+		if Hp[target] <= 0 {
 			message := fmt.Sprintf("Game over! %s wins.\n", other)
 			clientStubs.GameOver(message)
 			transport.GameOver <- message

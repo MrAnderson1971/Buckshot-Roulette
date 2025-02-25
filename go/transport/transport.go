@@ -186,14 +186,14 @@ func Listen(ctx context.Context, listener net.Listener) {
 		}
 	})
 
-	fmt.Println("Listening on " + listener.Addr().String())
-
 	server := &http.Server{}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
+
+	fmt.Println("Listening on " + listener.Addr().String())
 
 	<-ctx.Done()
 	server.Shutdown(context.Background())

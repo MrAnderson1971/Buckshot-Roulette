@@ -44,7 +44,8 @@ func main() {
 
 	var rpcListener net.Listener
 	if mode == "join" {
-		ipAddr, _, opponentName := transport.DiscoverHost()
+		var ipAddr string
+		ipAddr, _, opponentName = transport.DiscoverHost()
 		connection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, transport.PORT))
 		if err != nil {
 			panic(fmt.Sprintf("Error %s", err))
@@ -141,6 +142,7 @@ func main() {
 		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
 	} else if mode == "join" {
+		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your turn...")
 	}
 	game.Wg.Wait()
