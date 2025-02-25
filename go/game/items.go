@@ -2,6 +2,7 @@ package game
 
 import (
 	"Roulette/clientStubs"
+	"Roulette/rpc"
 	"fmt"
 	"math/rand"
 )
@@ -147,9 +148,9 @@ func (*Inverter) Description() string {
 func (*Inverter) Use(player string) {
 	if len(Shells) > 0 {
 		if Shells[0].Value == 0 {
-			Shells[0] = Shell{1}
+			Shells[0] = rpc.Shell{1}
 		} else {
-			Shells[0] = Shell{0}
+			Shells[0] = rpc.Shell{0}
 		}
 	}
 	fmt.Println("Inverted shell.")

@@ -13,6 +13,8 @@ func init() {
 	transport.Register(rpc.Damage, damage)
 	transport.Register(rpc.GameOver, gameOver)
 	transport.Register(rpc.MoreItems, moreItems)
+	transport.Register(rpc.YourTurn, yourTurn)
+	transport.Register(rpc.Reload, reload)
 }
 
 func summary(argData []byte) (out []byte, err error) {
@@ -47,6 +49,21 @@ func gameOver(argData []byte) (out []byte, err error) {
 func moreItems(argData []byte) (out []byte, err error) {
 	return transport.ServerStub(argData, func(any) any {
 		game.MoreItems()
+		return nil
+	})
+}
+
+func yourTurn(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(args rpc.YourTurnArgs) any {
+		game.CurrentTurn(args.Opponent, args.Player) // reverse
+		return nil
+	})
+}
+
+func reload(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(shells []rpc.Shell) any {
+		game.Shells = game.Shells[:0]
+		copy(game.Shells, shells)
 		return nil
 	})
 }

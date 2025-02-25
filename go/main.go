@@ -1,14 +1,13 @@
 package main
 
 import (
-	"Roulette/clientStubs"
 	"Roulette/game"
+	"Roulette/rpc"
 	"Roulette/transport"
 	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -64,7 +63,7 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 					case strings.HasPrefix(msg, "continue"):
 						fmt.Println(opponent + " got a blank! It's still their turn.")
 					case strings.HasPrefix(msg, "your_turn"):
-						currentTurn(player, opponent)
+						game.CurrentTurn(player, opponent)
 					default:
 						fmt.Println(msg)
 					}
@@ -86,7 +85,7 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 							fmt.Printf("Error converting %s to int: %s\n", msg[i], err)
 							os.Exit(1)
 						}
-						game.Shells = append(game.Shells, game.Shell{atoi})
+						game.Shells = append(game.Shells, rpc.Shell{atoi})
 						if atoi == 0 {
 							liveCount++
 						} else if atoi == 1 {
@@ -119,9 +118,9 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 				case strings.HasPrefix(line, "invert:"):
 					if len(game.Shells) > 0 {
 						if game.Shells[0].Value == 0 {
-							game.Shells[0] = game.Shell{1}
+							game.Shells[0] = rpc.Shell{1}
 						} else {
-							game.Shells[0] = game.Shell{0}
+							game.Shells[0] = rpc.Shell{0}
 						}
 					}
 					fmt.Println("Opponent inverted shell.")
@@ -131,124 +130,6 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 			}
 		}
 	}
-}
-
-func takeTurn(target string, other string, shooter string) string {
-	shell := game.Shells[0]
-	game.RemoveFirst(&game.Shells)
-	var action string
-	fmt.Printf("%s pulls the trigger, it's a %s shell!\n", shooter, shell.String())
-	clientStubs.Action(fmt.Sprintf("%s fired a %s shell at %s!", shooter, shell.String(), target))
-
-	if shell.Value == 0 { // live
-		game.Hp[target] -= game.Settings.Damage
-		fmt.Printf("%s's HP: %d\n", target, game.Hp[target])
-		clientStubs.Summary(fmt.Sprintf("%s lost %d HP. Remaining HP: %d\n", target, game.Settings.Damage, game.Hp[target]))
-		clientStubs.Damage(game.Settings.Damage, target)
-		game.Settings.Damage = 1
-		if game.Hp[target] == 0 {
-			message := fmt.Sprintf("Game over! %s wins.\n", other)
-			clientStubs.GameOver(message)
-			transport.GameOver <- message
-		}
-
-		if game.Settings.CuffedOpponent {
-			fmt.Println("Your opponent is cuffed!")
-			action = "continue"
-		} else {
-			action = "switch"
-		}
-	} else {
-		if shooter == target {
-			action = "continue"
-		} else {
-			if game.Settings.CuffedOpponent {
-				fmt.Println("Your opponent is cuffed!")
-				action = "continue"
-			} else {
-				action = "switch"
-			}
-		}
-	}
-	return action
-}
-
-func currentTurn(player string, opponent string) {
-	for {
-		if len(game.Shells) == 0 {
-			SendMessage("moreitems:\n")
-			fmt.Println("Reloading the shotgun!")
-			loadShotgun()
-		}
-		fmt.Println("Options:")
-		fmt.Println("1. Shoot yourself")
-		fmt.Println("2. Shoot your opponent")
-		for i, item := range game.NumberToItem {
-			fmt.Printf("%d: %s (%d)\n", i+3, item.Description(), game.Items[item])
-		}
-		fmt.Print("Choose an option: ")
-		var choice string
-
-		select {
-		case message := <-transport.GameOver:
-			fmt.Println(message)
-			return
-		default:
-		}
-		fmt.Scanln(&choice)
-		if choice == "1" || choice == "2" {
-			var action string
-			if choice == "1" {
-				action = takeTurn(player, opponent, player)
-			} else {
-				action = takeTurn(opponent, player, player)
-			}
-			if action == "switch" {
-				SendMessage("control:your_turn\n")
-				break
-			}
-			if action == "continue" {
-				fmt.Printf("%s gets another turn!\n", player)
-			}
-		} else if choice == "cheat" {
-			fmt.Println(game.Shells)
-		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
-			choiceToInt < len(game.NumberToItem)+3 && game.Items[game.NumberToItem[choiceToInt-3]] > 0 {
-			game.NumberToItem[choiceToInt-3].Use(player)
-			game.Items[game.NumberToItem[choiceToInt-3]]--
-		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
-			choiceToInt < len(game.NumberToItem)+3 {
-			fmt.Println("You don't have " + game.NumberToItem[choiceToInt-3].Name())
-		} else {
-			fmt.Println("Invalid choice. Please enter 1 or 2")
-		}
-	}
-}
-
-func loadShotgun() {
-	liveShells := rand.Intn(3) + 1
-	blankShells := rand.Intn(3) + 1
-	game.Shells = append(make([]game.Shell, liveShells), make([]game.Shell, blankShells)...)
-	rand.Shuffle(len(game.Shells), func(i, j int) {
-		game.Shells[i], game.Shells[j] = game.Shells[j], game.Shells[i]
-	})
-	for i := 0; i < liveShells; i++ {
-		game.Shells[i] = game.Shell{Value: 0} // Live shell
-	}
-	for i := liveShells; i < liveShells+blankShells; i++ {
-		game.Shells[i] = game.Shell{Value: 1} // Blank shell
-	}
-	fmt.Printf("[INFO] Shotgun loaded with %d live game.Shells and %d blank game.Shells (order is hidden).\n", liveShells, blankShells)
-	shellValues := make([]string, len(game.Shells))
-	for i, shell := range game.Shells {
-		shellValues[i] = strconv.Itoa(shell.Value)
-	}
-	msg := "reload:" + strings.Join(shellValues, "") + "\n"
-	_, err := connection.Write([]byte(msg))
-	if err != nil {
-		panic(fmt.Sprintf("Error %s", err))
-	}
-	game.MoreItems()
 }
 
 func main() {
@@ -333,7 +214,7 @@ func main() {
 
 	go handleIncomingMessages(ctx, playerName, opponentName)
 	if mode == "host" {
-		currentTurn(playerName, opponentName)
+		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
 	} else if mode == "join" {
 		fmt.Println("Waiting for your turn...")

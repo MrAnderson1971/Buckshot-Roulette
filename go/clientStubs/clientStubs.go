@@ -24,3 +24,11 @@ func GameOver(message string) {
 func MoreItems() {
 	transport.ClientStub[any](rpc.MoreItems, nil)
 }
+
+func YourTurn(player, opponent string) {
+	transport.ClientStub[any](rpc.YourTurn, rpc.YourTurnArgs{Player: player, Opponent: opponent})
+}
+
+func Reload(shells []rpc.Shell) {
+	transport.ClientStub[any](rpc.Reload, shells)
+}
