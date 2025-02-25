@@ -46,15 +46,8 @@ func ClientStub[R any](funcName string, args any) (result R) {
 	if err != nil {
 		panic(err)
 	}
-	resultChan := make(chan []byte)
-	errChan := make(chan error)
-	go Api(RPCRequest{funcName, argData}, address, resultChan, errChan)
-	select {
-	case out := <-resultChan:
-		json.Unmarshal(out, &result)
-	case err = <-errChan:
-		GameOver <- err.Error()
-	}
+
+	Api(RPCRequest{funcName, argData}, address)
 	return
 }
 
@@ -131,20 +124,22 @@ func DiscoverHost() (ip string, port string, hostName string) {
 }
 
 // Initiate new call; return result
-func Call(payload *bytes.Buffer, to net.Addr) (result *bytes.Buffer, err error) {
+func Call(payload *bytes.Buffer, to net.Addr) (result *bytes.Buffer) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	body, err := client.Post("http://"+to.String(), "application/json", payload)
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer body.Body.Close()
 
 	if body.StatusCode != http.StatusOK {
-		return nil, errors.New(body.Status)
+		panic(errors.New(body.Status))
 	}
 
 	result = &bytes.Buffer{}
-	_, err = io.Copy(result, body.Body)
+	if _, err = io.Copy(result, body.Body); err != nil {
+		panic(err)
+	}
 	return
 }
 
@@ -204,42 +199,35 @@ func Listen(ctx context.Context, listener net.Listener) {
 	server.Shutdown(context.Background())
 }
 
-func Api(request RPCRequest, address string, output chan []byte, err2 chan error) {
+func Api(request RPCRequest, address string) []byte {
 	var buf2 bytes.Buffer
 	err := json.NewEncoder(&buf2).Encode(request)
 	if err != nil {
-		err2 <- err
-		return
+		panic(err)
 	}
 
 	addr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
-		err2 <- err
-		return
+		panic(err)
 	}
 
-	result, transportErr := Call(&buf2, addr)
-	if transportErr != nil {
-		err2 <- transportErr
-		return
-	}
+	result := Call(&buf2, addr)
 
 	var response RPCResponse
 	err = json.NewDecoder(result).Decode(&response)
 	if err != nil {
-		err2 <- err
-		return
+		panic(err)
 	}
 
 	if response.Error != "" {
-		err2 <- errors.New(response.Error)
-		return
+		panic(errors.New(response.Error))
 	}
 
-	output <- response.Result
+	return response.Result
 }
 
 func Bind(addr string) {
+	fmt.Println("Other IP is: " + addr)
 	address = addr
 }
 

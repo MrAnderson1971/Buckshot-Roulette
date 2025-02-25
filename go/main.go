@@ -42,9 +42,9 @@ func main() {
 		}
 	}
 
+	var rpcListener net.Listener
 	if mode == "join" {
-		var ipAddr string
-		ipAddr, _, opponentName = transport.DiscoverHost()
+		ipAddr, _, opponentName := transport.DiscoverHost()
 		connection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, transport.PORT))
 		if err != nil {
 			panic(fmt.Sprintf("Error %s", err))
@@ -59,25 +59,26 @@ func main() {
 		if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
 			panic(fmt.Sprintf("Error %s", err))
 		}
-		// After connecting and exchanging names
-		// Read host's RPC port
-		hostRPCPortStr, err := bufio.NewReader(connection).ReadString('\n')
-		hostRPCPort := strings.TrimSpace(hostRPCPortStr)
 
 		// Start joiner's RPC server
-		rpcListener, err := net.Listen("tcp", "0.0.0.0:0")
+		rpcListener, err = net.Listen("tcp", "0.0.0.0:0")
+		if err != nil {
+			panic(err)
+		}
 		joinerRPCPort := rpcListener.Addr().(*net.TCPAddr).Port
 
 		// Send RPC port to host
 		fmt.Fprintf(connection, "%d\n", joinerRPCPort)
 
+		// Read joiner's RPC port
+		hostRPCPortString, err := bufio.NewReader(connection).ReadString('\n')
+		hostRPCPort := strings.TrimSpace(hostRPCPortString)
 		// Set host's RPC address
 		hostIP, _, _ := net.SplitHostPort(connection.RemoteAddr().String())
 		transport.Bind(fmt.Sprintf("%s:%s", hostIP, hostRPCPort))
 
 		// Start RPC listener
 		connection.Close()
-		go transport.Listen(ctx, rpcListener)
 	} else if mode == "host" {
 		func() {
 			listener, err := net.Listen("tcp", "0.0.0.0:0")
@@ -100,10 +101,6 @@ func main() {
 			addr := connection.LocalAddr().String()
 			fmt.Printf("Connected to %s\n", addr)
 
-			if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
-				panic(err)
-			}
-
 			reader := bufio.NewReader(connection)
 			opponentName, err = reader.ReadString('\n')
 			if err != nil {
@@ -112,7 +109,7 @@ func main() {
 			opponentName = strings.TrimSpace(opponentName)
 
 			// After accepting connection and exchanging names
-			rpcListener, err := net.Listen("tcp", "0.0.0.0:0")
+			rpcListener, err = net.Listen("tcp", "0.0.0.0:0")
 			if err != nil {
 				panic(err)
 			}
@@ -130,7 +127,6 @@ func main() {
 			transport.Bind(fmt.Sprintf("%s:%s", joinerIP, joinerRPCPort))
 
 			// Start RPC listener
-			go transport.Listen(ctx, rpcListener)
 			connection.Close()
 		}()
 	}
@@ -140,6 +136,7 @@ func main() {
 	fmt.Printf("%s's HP: %d\n", opponentName, game.Hp[opponentName])
 
 	game.Wg.Add(1)
+	go transport.Listen(ctx, rpcListener)
 	if mode == "host" {
 		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
