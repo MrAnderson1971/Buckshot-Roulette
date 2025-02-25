@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Roulette/clientStubs"
+	"Roulette/game"
+	"Roulette/transport"
 	"bufio"
 	"context"
 	"errors"
@@ -13,32 +16,6 @@ import (
 	"time"
 )
 
-const (
-	DISCOVERY_PORT = 0x60D
-	PORT           = 0xDEA
-	BUFFER_SIZE    = 1024
-)
-
-type Shell struct {
-	value int
-}
-
-func (s Shell) String() string {
-	if s.value == 0 {
-		return "live"
-	}
-	return "blank"
-}
-
-type Settings_ struct {
-	damage         int
-	cuffedOpponent bool
-}
-
-var gameOver = make(chan string)
-var Shells = make([]Shell, 0, 8)
-var Hp map[string]int
-var Settings Settings_
 var connection net.Conn
 var numberToItem = []Item{
 	&MagnifyingGlass{},
@@ -59,17 +36,6 @@ var items = map[Item]int{
 	numberToItem[5]: 0,
 	numberToItem[6]: 0,
 	numberToItem[7]: 0,
-}
-
-func RemoveFirst[T any](s *[]T) {
-	*s = (*s)[1:]
-}
-
-func SendMessage(message string) {
-	_, err := connection.Write([]byte(message))
-	if err != nil {
-		panic(err)
-	}
 }
 
 func splitLine(buffer string) (line, rest string) {
@@ -97,7 +63,7 @@ func moreItems() {
 	}
 	sb += "."
 	fmt.Println("You get " + sb)
-	SendMessage("summary:Opponent gets " + sb + "\n")
+	clientStubs.Summary("Opponent gets " + sb)
 }
 
 func handleIncomingMessages(ctx context.Context, player string, opponent string) {
@@ -143,14 +109,14 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 						fmt.Println(msg)
 					}
 				case strings.HasPrefix(line, "game_over:"):
-					gameOver <- strings.TrimPrefix(line, "game_over:")
+					transport.GameOver <- strings.TrimPrefix(line, "game_over:")
 				case strings.HasPrefix(line, "summary:"):
 					fmt.Println(strings.TrimPrefix(line, "summary:"))
 				case strings.HasPrefix(line, "action:"):
-					RemoveFirst(&Shells)
+					game.RemoveFirst(&game.Shells)
 					fmt.Println(opponent + "'s move: " + strings.TrimPrefix(line, "action:"))
 				case strings.HasPrefix(line, "reload:"):
-					Shells = Shells[:0]
+					game.Shells = game.Shells[:0]
 					liveCount := 0
 					blankCount := 0
 					msg := strings.TrimPrefix(line, "reload:")
@@ -160,7 +126,7 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 							fmt.Printf("Error converting %s to int: %s\n", msg[i], err)
 							os.Exit(1)
 						}
-						Shells = append(Shells, Shell{atoi})
+						game.Shells = append(game.Shells, game.Shell{atoi})
 						if atoi == 0 {
 							liveCount++
 						} else if atoi == 1 {
@@ -170,32 +136,32 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 							os.Exit(1)
 						}
 					}
-					fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n",
+					fmt.Printf("[INFO] Shotgun loaded with %d live game.Shells and %d blank game.Shells (order is hidden).\n",
 						liveCount, blankCount)
 				case strings.HasPrefix(line, "damage:"):
 					msg := strings.TrimPrefix(line, "damage:")
 					parts := strings.Split(msg, ",")
 					newHp, _ := strconv.Atoi(parts[0])
 					target := parts[1]
-					Hp[target] -= newHp
+					game.Hp[target] -= newHp
 				case strings.HasPrefix(line, "moreitems:"):
 					moreItems()
 				case strings.HasPrefix(line, "heal:"):
 					msg := strings.Split(strings.TrimPrefix(line, "heal:"), ",")
 					newHp, _ := strconv.Atoi(msg[1])
-					Hp[msg[0]] += newHp
+					game.Hp[msg[0]] += newHp
 					fmt.Println(msg[2])
 				case strings.HasPrefix(line, "eject:"):
-					if len(Shells) > 0 {
-						RemoveFirst(&Shells)
+					if len(game.Shells) > 0 {
+						game.RemoveFirst(&game.Shells)
 					}
 					fmt.Println(strings.TrimPrefix(line, "eject:"))
 				case strings.HasPrefix(line, "invert:"):
-					if len(Shells) > 0 {
-						if Shells[0].value == 0 {
-							Shells[0] = Shell{1}
+					if len(game.Shells) > 0 {
+						if game.Shells[0].Value == 0 {
+							game.Shells[0] = game.Shell{1}
 						} else {
-							Shells[0] = Shell{0}
+							game.Shells[0] = game.Shell{0}
 						}
 					}
 					fmt.Println("Opponent inverted shell.")
@@ -208,25 +174,26 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 }
 
 func takeTurn(target string, other string, shooter string) string {
-	shell := Shells[0]
-	RemoveFirst(&Shells)
+	shell := game.Shells[0]
+	game.RemoveFirst(&game.Shells)
 	var action string
 	fmt.Printf("%s pulls the trigger, it's a %s shell!\n", shooter, shell.String())
-	SendMessage("action:" + shooter + " fired a " + shell.String() + " shell at " + target + "!\n")
+	clientStubs.Action(fmt.Sprintf("%s fired a %s shell at %s!", shooter, shell.String(), target))
 
-	if shell.value == 0 { // live
-		Hp[target] -= Settings.damage
-		fmt.Printf("%s's HP: %d\n", target, Hp[target])
-		SendMessage(fmt.Sprintf("summary:%s lost %d HP. Remaining HP: %d\n", target, Settings.damage, Hp[target]))
-		SendMessage(fmt.Sprintf("damage:%d,%s\n", Settings.damage, target))
-		Settings.damage = 1
-		if Hp[target] == 0 {
+	if shell.Value == 0 { // live
+		game.Hp[target] -= game.Settings.Damage
+		fmt.Printf("%s's HP: %d\n", target, game.Hp[target])
+		clientStubs.Summary(fmt.Sprintf("%s lost %d HP. Remaining HP: %d\n", target, game.Settings.Damage, game.Hp[target]))
+
+		SendMessage(fmt.Sprintf("damage:%d,%s\n", game.Settings.Damage, target))
+		game.Settings.Damage = 1
+		if game.Hp[target] == 0 {
 			message := fmt.Sprintf("Game over! %s wins.\n", other)
 			SendMessage("game_over:" + message)
-			gameOver <- message
+			transport.GameOver <- message
 		}
 
-		if Settings.cuffedOpponent {
+		if game.Settings.CuffedOpponent {
 			fmt.Println("Your opponent is cuffed!")
 			action = "continue"
 		} else {
@@ -236,7 +203,7 @@ func takeTurn(target string, other string, shooter string) string {
 		if shooter == target {
 			action = "continue"
 		} else {
-			if Settings.cuffedOpponent {
+			if game.Settings.CuffedOpponent {
 				fmt.Println("Your opponent is cuffed!")
 				action = "continue"
 			} else {
@@ -249,7 +216,7 @@ func takeTurn(target string, other string, shooter string) string {
 
 func currentTurn(player string, opponent string) {
 	for {
-		if len(Shells) == 0 {
+		if len(game.Shells) == 0 {
 			SendMessage("moreitems:\n")
 			fmt.Println("Reloading the shotgun!")
 			loadShotgun()
@@ -262,6 +229,13 @@ func currentTurn(player string, opponent string) {
 		}
 		fmt.Print("Choose an option: ")
 		var choice string
+
+		select {
+		case message := <-transport.GameOver:
+			fmt.Println(message)
+			return
+		default:
+		}
 		fmt.Scanln(&choice)
 		if choice == "1" || choice == "2" {
 			var action string
@@ -278,7 +252,7 @@ func currentTurn(player string, opponent string) {
 				fmt.Printf("%s gets another turn!\n", player)
 			}
 		} else if choice == "cheat" {
-			fmt.Println(Shells)
+			fmt.Println(game.Shells)
 		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
 			choiceToInt < len(numberToItem)+3 && items[numberToItem[choiceToInt-3]] > 0 {
 			numberToItem[choiceToInt-3].Use(player)
@@ -295,20 +269,20 @@ func currentTurn(player string, opponent string) {
 func loadShotgun() {
 	liveShells := rand.Intn(3) + 1
 	blankShells := rand.Intn(3) + 1
-	Shells = append(make([]Shell, liveShells), make([]Shell, blankShells)...)
-	rand.Shuffle(len(Shells), func(i, j int) {
-		Shells[i], Shells[j] = Shells[j], Shells[i]
+	game.Shells = append(make([]game.Shell, liveShells), make([]game.Shell, blankShells)...)
+	rand.Shuffle(len(game.Shells), func(i, j int) {
+		game.Shells[i], game.Shells[j] = game.Shells[j], game.Shells[i]
 	})
 	for i := 0; i < liveShells; i++ {
-		Shells[i] = Shell{value: 0} // Live shell
+		game.Shells[i] = game.Shell{Value: 0} // Live shell
 	}
 	for i := liveShells; i < liveShells+blankShells; i++ {
-		Shells[i] = Shell{value: 1} // Blank shell
+		game.Shells[i] = game.Shell{Value: 1} // Blank shell
 	}
-	fmt.Printf("[INFO] Shotgun loaded with %d live Shells and %d blank Shells (order is hidden).\n", liveShells, blankShells)
-	shellValues := make([]string, len(Shells))
-	for i, shell := range Shells {
-		shellValues[i] = strconv.Itoa(shell.value)
+	fmt.Printf("[INFO] Shotgun loaded with %d live game.Shells and %d blank game.Shells (order is hidden).\n", liveShells, blankShells)
+	shellValues := make([]string, len(game.Shells))
+	for i, shell := range game.Shells {
+		shellValues[i] = strconv.Itoa(shell.Value)
 	}
 	msg := "reload:" + strings.Join(shellValues, "") + "\n"
 	_, err := connection.Write([]byte(msg))
@@ -321,7 +295,6 @@ func loadShotgun() {
 func main() {
 	var playerName string
 	var opponentName string
-	defer close(gameOver)
 	defer func() {
 		if connection != nil {
 			connection.Close()
@@ -330,8 +303,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	Settings = Settings_{1, false}
 
 	fmt.Print("Enter your name: ")
 	if _, err := fmt.Scanln(&playerName); err != nil {
@@ -352,8 +323,8 @@ func main() {
 
 	if mode == "join" {
 		var ipAddr string
-		ipAddr, _, opponentName = DiscoverHost()
-		connection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, PORT))
+		ipAddr, _, opponentName = transport.DiscoverHost()
+		connection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, transport.PORT))
 		if err != nil {
 			panic(fmt.Sprintf("Error %s", err))
 		}
@@ -369,10 +340,10 @@ func main() {
 		}
 	} else if mode == "host" {
 		func() {
-			discoveryBroadcast := &DiscoveryBroadcast{}
+			discoveryBroadcast := &transport.DiscoveryBroadcast{}
 			discoveryBroadcast.Start(playerName)
 			defer discoveryBroadcast.Close()
-			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", PORT))
+			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", transport.PORT))
 			if err != nil {
 				panic(fmt.Sprintf("Error %s", err))
 			}
@@ -396,11 +367,10 @@ func main() {
 			opponentName = strings.TrimSpace(opponentName)
 		}()
 	}
-	Hp = make(map[string]int)
-	Hp[playerName] = 5
-	Hp[opponentName] = 5
-	fmt.Printf("%s's HP: %d\n", playerName, Hp[playerName])
-	fmt.Printf("%s's HP: %d\n", opponentName, Hp[opponentName])
+	game.Hp[playerName] = 5
+	game.Hp[opponentName] = 5
+	fmt.Printf("%s's HP: %d\n", playerName, game.Hp[playerName])
+	fmt.Printf("%s's HP: %d\n", opponentName, game.Hp[opponentName])
 
 	go handleIncomingMessages(ctx, playerName, opponentName)
 	if mode == "host" {
@@ -408,12 +378,5 @@ func main() {
 		fmt.Println("Waiting for your opponent's turn...")
 	} else if mode == "join" {
 		fmt.Println("Waiting for your turn...")
-	}
-
-	select {
-	case message := <-gameOver:
-		fmt.Println(message)
-		cancel()
-		fmt.Scanln()
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"bytes"
@@ -13,6 +13,14 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+const (
+	DISCOVERY_PORT = 0x60D
+	PORT           = 0xDEA
+	BUFFER_SIZE    = 1024
+)
+
+var GameOver = make(chan string)
 
 type DiscoveryBroadcast struct {
 	name string
@@ -29,7 +37,11 @@ type RPCResponse struct {
 	Error  string `json:"error"`
 }
 
-func ClientStub[R any](funcName string, args any) (result R, err error) {
+func Register(name string, stub func([]byte) ([]byte, error)) {
+	methods[name] = stub
+}
+
+func ClientStub[R any](funcName string, args any) (result R) {
 	argData, err := json.Marshal(args)
 	if err != nil {
 		panic(err)
@@ -41,19 +53,17 @@ func ClientStub[R any](funcName string, args any) (result R, err error) {
 	case out := <-resultChan:
 		json.Unmarshal(out, &result)
 	case err = <-errChan:
+		GameOver <- err.Error()
 	}
 	return
 }
 
-func ServerStub[T any](argData []byte, method func(T) any) []byte {
+func ServerStub[T any](argData []byte, method func(T) any) (resData []byte, err error) {
 	var args T
 	json.Unmarshal(argData, &args)
 	res := method(args)
-	resData, err := json.Marshal(res)
-	if err != nil {
-		panic(err)
-	}
-	return resData
+	resData, err = json.Marshal(res)
+	return
 }
 
 func (d *DiscoveryBroadcast) Start(name string) {

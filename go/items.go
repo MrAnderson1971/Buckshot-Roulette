@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Roulette/game"
 	"fmt"
 	"math/rand"
 )
@@ -22,7 +23,7 @@ func (*MagnifyingGlass) Description() string {
 }
 
 func (*MagnifyingGlass) Use(player string) {
-	fmt.Printf("The next item is a %s shell.\n", Shells[0])
+	fmt.Printf("The next item is a %s shell.\n", game.Shells[0])
 	SendMessage("summary:Opponent used magnifying glass (very interesting)...\n")
 }
 
@@ -146,9 +147,9 @@ func (*Inverter) Description() string {
 func (*Inverter) Use(player string) {
 	if len(Shells) > 0 {
 		if Shells[0].value == 0 {
-			Shells[0] = Shell{1}
+			Shells[0] = game.Shell{1}
 		} else {
-			Shells[0] = Shell{0}
+			Shells[0] = game.Shell{0}
 		}
 	}
 	fmt.Println("Inverted shell.")
