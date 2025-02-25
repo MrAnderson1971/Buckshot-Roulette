@@ -1,6 +1,8 @@
-package main
+package game
 
 import (
+	"Roulette/clientStubs"
+	"Roulette/rpc"
 	"fmt"
 	"math/rand"
 )
@@ -23,7 +25,7 @@ func (*MagnifyingGlass) Description() string {
 
 func (*MagnifyingGlass) Use(player string) {
 	fmt.Printf("The next item is a %s shell.\n", Shells[0])
-	SendMessage("summary:Opponent used magnifying glass (very interesting)...\n")
+	clientStubs.Summary("Opponent used magnifying glass (very interesting)...")
 }
 
 type Cigarette struct{}
@@ -39,7 +41,7 @@ func (*Cigarette) Description() string {
 func (*Cigarette) Use(player string) {
 	Hp[player]++
 	fmt.Println("Smoked one HP back.")
-	SendMessage(fmt.Sprintf("heal:%s,1,Opponened smoked 1 HP.\n", player))
+	clientStubs.Summary(fmt.Sprintf("heal:%s,1,Opponened smoked 1 HP.\n", player))
 }
 
 type Handsaw struct{}
@@ -53,9 +55,9 @@ func (*Handsaw) Description() string {
 }
 
 func (*Handsaw) Use(player string) {
-	Settings.damage = 2
+	Settings.Damage = 2
 	fmt.Println("Sawed off shotgun...")
-	SendMessage("summary:Opponent used handsaw...\n")
+	clientStubs.Summary("summary:Opponent used handsaw...\n")
 }
 
 type Beer struct{}
@@ -72,7 +74,7 @@ func (*Beer) Use(player string) {
 	first := Shells[0]
 	RemoveFirst(&Shells)
 	fmt.Printf("Ejected a %s shell.\n", first)
-	SendMessage(fmt.Sprintf("eject:Opponent ejected a %s shell."))
+	clientStubs.Eject(fmt.Sprintf("Opponent ejected a %s shell.", first.String()))
 }
 
 type Handcuffs struct{}
@@ -86,9 +88,9 @@ func (*Handcuffs) Description() string {
 }
 
 func (*Handcuffs) Use(player string) {
-	Settings.cuffedOpponent = true
+	Settings.CuffedOpponent = true
 	fmt.Println("Cuffed your opponent.")
-	SendMessage("summary:Opponent cuffed you!\n")
+	clientStubs.Summary("Opponent cuffed you!")
 }
 
 type Phone struct{}
@@ -108,7 +110,7 @@ func (*Phone) Use(player string) {
 		selected := rand.Intn(len(Shells)-1) + 1
 		fmt.Printf("Shell #%d, %s", selected+1, Shells[selected])
 	}
-	SendMessage("summary:Opponent used phone...\n")
+	clientStubs.Summary("Opponent used phone...")
 }
 
 type Medicine struct{}
@@ -125,11 +127,11 @@ func (*Medicine) Use(player string) {
 	if rand.Intn(2) == 1 {
 		Hp[player] += 2
 		fmt.Println("You gained 2 HP!")
-		SendMessage(fmt.Sprintf("heal:%s,2,Opponent gained 2 HP!\n", player))
+		clientStubs.Heal(2, player, "Opponent gained 2 HP!")
 	} else {
 		Hp[player]--
 		fmt.Println("You collapsed! -1 HP.")
-		SendMessage(fmt.Sprintf("heal:%s,-1,Opponent collapsed! They lose 1 HP\n", player))
+		clientStubs.Heal(-1, player, "Opponent collapsed! They lose 1 HP.")
 	}
 }
 
@@ -145,12 +147,12 @@ func (*Inverter) Description() string {
 
 func (*Inverter) Use(player string) {
 	if len(Shells) > 0 {
-		if Shells[0].value == 0 {
-			Shells[0] = Shell{1}
+		if Shells[0].Value == 0 {
+			Shells[0] = rpc.Shell{1}
 		} else {
-			Shells[0] = Shell{0}
+			Shells[0] = rpc.Shell{0}
 		}
 	}
 	fmt.Println("Inverted shell.")
-	SendMessage("invert:\n")
+	clientStubs.Invert()
 }
