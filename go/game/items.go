@@ -1,7 +1,7 @@
-package main
+package game
 
 import (
-	"Roulette/game"
+	"Roulette/clientStubs"
 	"fmt"
 	"math/rand"
 )
@@ -23,8 +23,8 @@ func (*MagnifyingGlass) Description() string {
 }
 
 func (*MagnifyingGlass) Use(player string) {
-	fmt.Printf("The next item is a %s shell.\n", game.Shells[0])
-	SendMessage("summary:Opponent used magnifying glass (very interesting)...\n")
+	fmt.Printf("The next item is a %s shell.\n", Shells[0])
+	clientStubs.Summary("Opponent used magnifying glass (very interesting)...")
 }
 
 type Cigarette struct{}
@@ -40,7 +40,7 @@ func (*Cigarette) Description() string {
 func (*Cigarette) Use(player string) {
 	Hp[player]++
 	fmt.Println("Smoked one HP back.")
-	SendMessage(fmt.Sprintf("heal:%s,1,Opponened smoked 1 HP.\n", player))
+	clientStubs.Summary(fmt.Sprintf("heal:%s,1,Opponened smoked 1 HP.\n", player))
 }
 
 type Handsaw struct{}
@@ -54,9 +54,9 @@ func (*Handsaw) Description() string {
 }
 
 func (*Handsaw) Use(player string) {
-	Settings.damage = 2
+	Settings.Damage = 2
 	fmt.Println("Sawed off shotgun...")
-	SendMessage("summary:Opponent used handsaw...\n")
+	clientStubs.Summary("summary:Opponent used handsaw...\n")
 }
 
 type Beer struct{}
@@ -87,9 +87,9 @@ func (*Handcuffs) Description() string {
 }
 
 func (*Handcuffs) Use(player string) {
-	Settings.cuffedOpponent = true
+	Settings.CuffedOpponent = true
 	fmt.Println("Cuffed your opponent.")
-	SendMessage("summary:Opponent cuffed you!\n")
+	clientStubs.Summary("Opponent cuffed you!")
 }
 
 type Phone struct{}
@@ -109,7 +109,7 @@ func (*Phone) Use(player string) {
 		selected := rand.Intn(len(Shells)-1) + 1
 		fmt.Printf("Shell #%d, %s", selected+1, Shells[selected])
 	}
-	SendMessage("summary:Opponent used phone...\n")
+	clientStubs.Summary("Opponent used phone...")
 }
 
 type Medicine struct{}
@@ -146,10 +146,10 @@ func (*Inverter) Description() string {
 
 func (*Inverter) Use(player string) {
 	if len(Shells) > 0 {
-		if Shells[0].value == 0 {
-			Shells[0] = game.Shell{1}
+		if Shells[0].Value == 0 {
+			Shells[0] = Shell{1}
 		} else {
-			Shells[0] = game.Shell{0}
+			Shells[0] = Shell{0}
 		}
 	}
 	fmt.Println("Inverted shell.")

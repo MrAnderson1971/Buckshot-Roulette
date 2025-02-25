@@ -17,26 +17,6 @@ import (
 )
 
 var connection net.Conn
-var numberToItem = []Item{
-	&MagnifyingGlass{},
-	&Cigarette{},
-	&Beer{},
-	&Handsaw{},
-	&Handcuffs{},
-	&Phone{},
-	&Medicine{},
-	&Inverter{},
-}
-var items = map[Item]int{
-	numberToItem[0]: 0,
-	numberToItem[1]: 0,
-	numberToItem[2]: 0,
-	numberToItem[3]: 0,
-	numberToItem[4]: 0,
-	numberToItem[5]: 0,
-	numberToItem[6]: 0,
-	numberToItem[7]: 0,
-}
 
 func splitLine(buffer string) (line, rest string) {
 	idx := strings.Index(buffer, "\n")
@@ -44,26 +24,6 @@ func splitLine(buffer string) (line, rest string) {
 		return buffer, ""
 	}
 	return buffer[:idx], buffer[idx+1:]
-}
-
-func moreItems() {
-	tempItems := make([]Item, 0, len(numberToItem))
-	for _, stuff := range numberToItem {
-		tempItems = append(tempItems, stuff)
-	}
-	chosenItems := make([]Item, 0)
-	for i := 0; i < 2; i++ {
-		selectedItem := rand.Intn(len(tempItems))
-		chosenItems = append(chosenItems, tempItems[selectedItem])
-		items[numberToItem[selectedItem]]++
-	}
-	sb := ""
-	for _, chosenItem := range chosenItems {
-		sb += chosenItem.Name() + ", "
-	}
-	sb += "."
-	fmt.Println("You get " + sb)
-	clientStubs.Summary("Opponent gets " + sb)
 }
 
 func handleIncomingMessages(ctx context.Context, player string, opponent string) {
@@ -145,7 +105,7 @@ func handleIncomingMessages(ctx context.Context, player string, opponent string)
 					target := parts[1]
 					game.Hp[target] -= newHp
 				case strings.HasPrefix(line, "moreitems:"):
-					moreItems()
+					game.MoreItems()
 				case strings.HasPrefix(line, "heal:"):
 					msg := strings.Split(strings.TrimPrefix(line, "heal:"), ",")
 					newHp, _ := strconv.Atoi(msg[1])
@@ -184,12 +144,11 @@ func takeTurn(target string, other string, shooter string) string {
 		game.Hp[target] -= game.Settings.Damage
 		fmt.Printf("%s's HP: %d\n", target, game.Hp[target])
 		clientStubs.Summary(fmt.Sprintf("%s lost %d HP. Remaining HP: %d\n", target, game.Settings.Damage, game.Hp[target]))
-
-		SendMessage(fmt.Sprintf("damage:%d,%s\n", game.Settings.Damage, target))
+		clientStubs.Damage(game.Settings.Damage, target)
 		game.Settings.Damage = 1
 		if game.Hp[target] == 0 {
 			message := fmt.Sprintf("Game over! %s wins.\n", other)
-			SendMessage("game_over:" + message)
+			clientStubs.GameOver(message)
 			transport.GameOver <- message
 		}
 
@@ -224,8 +183,8 @@ func currentTurn(player string, opponent string) {
 		fmt.Println("Options:")
 		fmt.Println("1. Shoot yourself")
 		fmt.Println("2. Shoot your opponent")
-		for i, item := range numberToItem {
-			fmt.Printf("%d: %s (%d)\n", i+3, item.Description(), items[item])
+		for i, item := range game.NumberToItem {
+			fmt.Printf("%d: %s (%d)\n", i+3, item.Description(), game.Items[item])
 		}
 		fmt.Print("Choose an option: ")
 		var choice string
@@ -254,12 +213,12 @@ func currentTurn(player string, opponent string) {
 		} else if choice == "cheat" {
 			fmt.Println(game.Shells)
 		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
-			choiceToInt < len(numberToItem)+3 && items[numberToItem[choiceToInt-3]] > 0 {
-			numberToItem[choiceToInt-3].Use(player)
-			items[numberToItem[choiceToInt-3]]--
+			choiceToInt < len(game.NumberToItem)+3 && game.Items[game.NumberToItem[choiceToInt-3]] > 0 {
+			game.NumberToItem[choiceToInt-3].Use(player)
+			game.Items[game.NumberToItem[choiceToInt-3]]--
 		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
-			choiceToInt < len(numberToItem)+3 {
-			fmt.Println("You don't have " + numberToItem[choiceToInt-3].Name())
+			choiceToInt < len(game.NumberToItem)+3 {
+			fmt.Println("You don't have " + game.NumberToItem[choiceToInt-3].Name())
 		} else {
 			fmt.Println("Invalid choice. Please enter 1 or 2")
 		}
@@ -289,7 +248,7 @@ func loadShotgun() {
 	if err != nil {
 		panic(fmt.Sprintf("Error %s", err))
 	}
-	moreItems()
+	game.MoreItems()
 }
 
 func main() {
