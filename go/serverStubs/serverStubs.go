@@ -17,6 +17,7 @@ func Register() {
 	transport.Register(rpc.Reload, reload)
 	transport.Register(rpc.Eject, eject)
 	transport.Register(rpc.Heal, heal)
+	transport.Register(rpc.Invert, invert)
 }
 
 func summary(argData []byte) (out []byte, err error) {
@@ -65,9 +66,9 @@ func yourTurn(argData []byte) (out []byte, err error) {
 func reload(argData []byte) (out []byte, err error) {
 	return transport.ServerStub(argData, func(shells []rpc.Shell) any {
 		game.Shells = game.Shells[:0]
-		copy(game.Shells, shells)
 		var liveCount, blankCount int
-		for _, shell := range game.Shells {
+		for _, shell := range shells {
+			game.Shells = append(game.Shells, shell)
 			if shell.Value == 0 {
 				liveCount++
 			} else {
