@@ -32,3 +32,15 @@ func YourTurn(player, opponent string) {
 func Reload(shells []rpc.Shell) {
 	transport.ClientStub[any](rpc.Reload, shells)
 }
+
+func Eject(message string) {
+	transport.ClientStub[any](rpc.Eject, message)
+}
+
+func Heal(amount int, target, message string) {
+	transport.ClientStub[any](rpc.Heal, rpc.HealArgs{Amount: amount, Target: target, Message: message})
+}
+
+func Invert() {
+	transport.ClientStub[any](rpc.Invert, nil)
+}

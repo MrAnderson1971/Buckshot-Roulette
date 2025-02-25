@@ -8,6 +8,9 @@ const (
 	MoreItems = "moreItems"
 	YourTurn  = "yourTurn"
 	Reload    = "reload"
+	Eject     = "eject"
+	Heal      = "heal"
+	Invert    = "invert"
 )
 
 type DamageArgs struct {
@@ -22,6 +25,12 @@ type YourTurnArgs struct {
 
 type Shell struct {
 	Value int
+}
+
+type HealArgs struct {
+	Amount  int
+	Target  string
+	Message string
 }
 
 func (s Shell) String() string {

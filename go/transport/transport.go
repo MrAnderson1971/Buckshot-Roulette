@@ -177,7 +177,7 @@ func handleCall(msg *bytes.Buffer) []byte {
 }
 
 // Start listening for incoming calls
-func Listen(ctx context.Context) {
+func Listen(ctx context.Context, listener net.Listener) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		var req bytes.Buffer
 		if _, err := io.Copy(&req, r.Body); err != nil {
@@ -239,6 +239,9 @@ func Api(request RPCRequest, address string, output chan []byte, err2 chan error
 	output <- response.Result
 }
 
-var listener net.Listener
+func Bind(addr string) {
+	address = addr
+}
+
 var methods = make(map[string]func([]byte) ([]byte, error))
 var address string

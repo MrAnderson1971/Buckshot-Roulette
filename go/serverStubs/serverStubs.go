@@ -15,6 +15,8 @@ func init() {
 	transport.Register(rpc.MoreItems, moreItems)
 	transport.Register(rpc.YourTurn, yourTurn)
 	transport.Register(rpc.Reload, reload)
+	transport.Register(rpc.Eject, eject)
+	transport.Register(rpc.Heal, heal)
 }
 
 func summary(argData []byte) (out []byte, err error) {
@@ -64,6 +66,42 @@ func reload(argData []byte) (out []byte, err error) {
 	return transport.ServerStub(argData, func(shells []rpc.Shell) any {
 		game.Shells = game.Shells[:0]
 		copy(game.Shells, shells)
+		var liveCount, blankCount int
+		for _, shell := range game.Shells {
+			if shell.Value == 0 {
+				liveCount++
+			} else {
+				blankCount++
+			}
+		}
+		fmt.Printf("[INFO] Shotgun loaded with %d live game.Shells and %d blank game.Shells (order is hidden).\n",
+			liveCount, blankCount)
+		return nil
+	})
+}
+
+func eject(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(message string) any {
+		if len(game.Shells) > 0 {
+			game.RemoveFirst(&game.Shells)
+		}
+		fmt.Println(message)
+		return nil
+	})
+}
+
+func heal(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(args rpc.HealArgs) any {
+		game.Hp[args.Target] += args.Amount
+		fmt.Println(args.Message)
+		return nil
+	})
+}
+
+func invert(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(any) any {
+		game.Shells[0].Value = 1 - game.Shells[0].Value
+		fmt.Println("Opponent used inverter...")
 		return nil
 	})
 }

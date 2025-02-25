@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync"
 )
 
 var Shells = make([]rpc.Shell, 0, 8)
@@ -17,6 +18,7 @@ func RemoveFirst[T any](s *[]T) {
 
 var Settings = settings{1, false}
 var Hp = make(map[string]int)
+var Wg sync.WaitGroup
 
 type settings struct {
 	Damage         int
@@ -123,6 +125,7 @@ func CurrentTurn(player string, opponent string) {
 		select {
 		case message := <-transport.GameOver:
 			fmt.Println(message)
+			Wg.Done()
 			return
 		default:
 		}

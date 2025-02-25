@@ -74,7 +74,7 @@ func (*Beer) Use(player string) {
 	first := Shells[0]
 	RemoveFirst(&Shells)
 	fmt.Printf("Ejected a %s shell.\n", first)
-	SendMessage(fmt.Sprintf("eject:Opponent ejected a %s shell."))
+	clientStubs.Eject(fmt.Sprintf("Opponent ejected a %s shell.", first.String()))
 }
 
 type Handcuffs struct{}
@@ -127,11 +127,11 @@ func (*Medicine) Use(player string) {
 	if rand.Intn(2) == 1 {
 		Hp[player] += 2
 		fmt.Println("You gained 2 HP!")
-		SendMessage(fmt.Sprintf("heal:%s,2,Opponent gained 2 HP!\n", player))
+		clientStubs.Heal(2, player, "Opponent gained 2 HP!")
 	} else {
 		Hp[player]--
 		fmt.Println("You collapsed! -1 HP.")
-		SendMessage(fmt.Sprintf("heal:%s,-1,Opponent collapsed! They lose 1 HP\n", player))
+		clientStubs.Heal(-1, player, "Opponent collapsed! They lose 1 HP.")
 	}
 }
 
@@ -154,5 +154,5 @@ func (*Inverter) Use(player string) {
 		}
 	}
 	fmt.Println("Inverted shell.")
-	SendMessage("invert:\n")
+	clientStubs.Invert()
 }
