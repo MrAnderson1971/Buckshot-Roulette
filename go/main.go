@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -29,11 +28,6 @@ func (s Shell) String() string {
 		return "live"
 	}
 	return "blank"
-}
-
-type DiscoveryBroadcast struct {
-	name string
-	stop atomic.Bool
 }
 
 type Settings_ struct {
@@ -69,69 +63,6 @@ var items = map[Item]int{
 
 func RemoveFirst[T any](s *[]T) {
 	*s = (*s)[1:]
-}
-
-func (d *DiscoveryBroadcast) Start(name string) {
-	d.name = name
-	d.stop.Store(false)
-	go func() {
-		conn, err := net.Dial("udp", fmt.Sprintf("255.255.255.255:%d", DISCOVERY_PORT))
-		if err != nil {
-			panic(fmt.Sprintf("Error %s", err))
-		}
-		defer conn.Close()
-		for !d.stop.Load() {
-			message := fmt.Sprintf("BUCKSHOT_ROULETTE:%s:%d\n", d.name, PORT)
-			_, err = conn.Write([]byte(message))
-			if err != nil {
-				panic(fmt.Sprintf("Error %s", err))
-			}
-			time.Sleep(2 * time.Second)
-		}
-	}()
-}
-
-func (d *DiscoveryBroadcast) Close() {
-	d.stop.Store(true)
-}
-
-func discoverHost() (string, string, string, error) {
-	addr := net.UDPAddr{
-		Port: DISCOVERY_PORT,
-		IP:   net.IPv4zero,
-	}
-	udpConn, err := net.ListenUDP("udp4", &addr)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer udpConn.Close()
-	err = udpConn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	if err != nil {
-		return "", "", "", err
-	}
-
-	buffer := make([]byte, BUFFER_SIZE)
-
-	err = udpConn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	if err != nil {
-		return "", "", "", err
-	}
-	for {
-		n, addr, err := udpConn.ReadFromUDP(buffer)
-		if err != nil {
-			return "", "", "", err
-		}
-		message := string(buffer[:n])
-		if strings.HasPrefix(message, "BUCKSHOT_ROULETTE:") {
-			parts := strings.Split(message, ":")
-			if len(parts) == 3 {
-				hostName := parts[1]
-				port := parts[2]
-				fmt.Printf("Discovered game hosted by %s at %s:%s\n", hostName, addr.IP, port)
-				return addr.IP.String(), port, hostName, nil
-			}
-		}
-	}
 }
 
 func SendMessage(message string) {
@@ -403,39 +334,37 @@ func main() {
 	Settings = Settings_{1, false}
 
 	fmt.Print("Enter your name: ")
-	_, err := fmt.Scanln(&playerName)
-	if err != nil {
+	if _, err := fmt.Scanln(&playerName); err != nil {
 		return
 	}
 	fmt.Print("Do you want to host or join? (host/join): ")
 	var mode string
-	_, err = fmt.Scanln(&mode)
+	if _, err := fmt.Scanln(&mode); err != nil {
+		panic(err)
+	}
 	for mode != "host" && mode != "join" {
 		fmt.Print("Do you want to host or join? (host/join): ")
 		var mode string
-		_, err = fmt.Scanln(&mode)
+		if _, err := fmt.Scanln(&mode); err != nil {
+			panic(err)
+		}
 	}
 
 	if mode == "join" {
 		var ipAddr string
-		ipAddr, _, opponentName, err = discoverHost()
-		if err != nil {
-			panic(fmt.Sprintf("Error %s", err))
-		}
-		connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, PORT))
+		ipAddr, _, opponentName = DiscoverHost()
+		connection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ipAddr, PORT))
 		if err != nil {
 			panic(fmt.Sprintf("Error %s", err))
 		}
 		fmt.Printf("Connected to %s\n", ipAddr)
 		for playerName == opponentName {
 			fmt.Print("Name cannot be opponent playerName")
-			_, err := fmt.Scanln(&playerName)
-			if err != nil {
+			if _, err = fmt.Scanln(&playerName); err != nil {
 				panic(fmt.Sprintf("Error %s", err))
 			}
 		}
-		_, err = connection.Write([]byte(playerName + "\n"))
-		if err != nil {
+		if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
 			panic(fmt.Sprintf("Error %s", err))
 		}
 	} else if mode == "host" {
@@ -454,8 +383,8 @@ func main() {
 			}
 			addr := connection.LocalAddr().String()
 			fmt.Printf("Connected to %s\n", addr)
-			_, err = connection.Write([]byte(playerName + "\n"))
-			if err != nil {
+
+			if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
 				panic(fmt.Sprintf("Error %s", err))
 			}
 
