@@ -66,7 +66,7 @@ func ServerStub[T any](argData []byte, method func(T) any) (resData []byte, err 
 	return
 }
 
-func (d *DiscoveryBroadcast) Start(name string) {
+func (d *DiscoveryBroadcast) Start(name string, port int) {
 	d.name = name
 	d.stop.Store(false)
 	go func() {
@@ -76,7 +76,7 @@ func (d *DiscoveryBroadcast) Start(name string) {
 		}
 		defer conn.Close()
 		for !d.stop.Load() {
-			message := fmt.Sprintf("BUCKSHOT_ROULETTE:%s:%d\n", d.name, PORT)
+			message := fmt.Sprintf("BUCKSHOT_ROULETTE:%s:%d\n", d.name, port)
 			_, err = conn.Write([]byte(message))
 			if err != nil {
 				panic(fmt.Sprintf("Error %s", err))
@@ -149,6 +149,7 @@ func Call(payload *bytes.Buffer, to net.Addr) (result *bytes.Buffer, err error) 
 }
 
 func createError(message string) []byte {
+	fmt.Println("Error: " + message)
 	buf := bytes.NewBuffer(nil)
 	json.NewEncoder(buf).Encode(RPCResponse{Error: message})
 	return buf.Bytes()
@@ -161,7 +162,6 @@ func handleCall(msg *bytes.Buffer) []byte {
 	}
 
 	method, exists := methods[request.Method]
-	fmt.Println("Got a request for " + request.Method)
 	if !exists {
 		return createError("Invalid method: " + request.Method)
 	}

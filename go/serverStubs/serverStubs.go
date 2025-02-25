@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-func init() {
+func Register() {
 	transport.Register(rpc.Summary, summary)
 	transport.Register(rpc.Action, action)
 	transport.Register(rpc.Damage, damage)

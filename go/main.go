@@ -2,6 +2,7 @@ package main
 
 import (
 	"Roulette/game"
+	"Roulette/serverStubs"
 	"Roulette/transport"
 	"bufio"
 	"context"
@@ -13,6 +14,7 @@ import (
 var connection net.Conn
 
 func main() {
+	serverStubs.Register()
 	var playerName string
 	var opponentName string
 	defer func() {
@@ -57,33 +59,79 @@ func main() {
 		if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
 			panic(fmt.Sprintf("Error %s", err))
 		}
+		// After connecting and exchanging names
+		// Read host's RPC port
+		hostRPCPortStr, err := bufio.NewReader(connection).ReadString('\n')
+		hostRPCPort := strings.TrimSpace(hostRPCPortStr)
+
+		// Start joiner's RPC server
+		rpcListener, err := net.Listen("tcp", "0.0.0.0:0")
+		joinerRPCPort := rpcListener.Addr().(*net.TCPAddr).Port
+
+		// Send RPC port to host
+		fmt.Fprintf(connection, "%d\n", joinerRPCPort)
+
+		// Set host's RPC address
+		hostIP, _, _ := net.SplitHostPort(connection.RemoteAddr().String())
+		transport.Bind(fmt.Sprintf("%s:%s", hostIP, hostRPCPort))
+
+		// Start RPC listener
+		connection.Close()
+		go transport.Listen(ctx, rpcListener)
 	} else if mode == "host" {
 		func() {
-			discoveryBroadcast := &transport.DiscoveryBroadcast{}
-			discoveryBroadcast.Start(playerName)
-			defer discoveryBroadcast.Close()
-			listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", transport.PORT))
+			listener, err := net.Listen("tcp", "0.0.0.0:0")
 			if err != nil {
-				panic(fmt.Sprintf("Error %s", err))
+				panic(err)
+			}
+			port := listener.Addr().(*net.TCPAddr).Port
+			discoveryBroadcast := &transport.DiscoveryBroadcast{}
+			discoveryBroadcast.Start(playerName, port)
+			defer discoveryBroadcast.Close()
+			listener, err = net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", transport.PORT))
+			if err != nil {
+				panic(err)
 			}
 			defer listener.Close()
 			connection, err = listener.Accept()
 			if err != nil {
-				panic(fmt.Sprintf("Error %s", err))
+				panic(err)
 			}
 			addr := connection.LocalAddr().String()
 			fmt.Printf("Connected to %s\n", addr)
 
 			if _, err = connection.Write([]byte(playerName + "\n")); err != nil {
-				panic(fmt.Sprintf("Error %s", err))
+				panic(err)
 			}
 
 			reader := bufio.NewReader(connection)
 			opponentName, err = reader.ReadString('\n')
 			if err != nil {
-				panic(fmt.Sprintf("Error %s", err))
+				panic(err)
 			}
 			opponentName = strings.TrimSpace(opponentName)
+
+			// After accepting connection and exchanging names
+			rpcListener, err := net.Listen("tcp", "0.0.0.0:0")
+			if err != nil {
+				panic(err)
+			}
+			hostRPCPort := rpcListener.Addr().(*net.TCPAddr).Port
+
+			// Send RPC port to joiner
+			fmt.Fprintf(connection, "%d\n", hostRPCPort)
+
+			// Read joiner's RPC port
+			joinerRPCPortStr, err := bufio.NewReader(connection).ReadString('\n')
+			joinerRPCPort := strings.TrimSpace(joinerRPCPortStr)
+
+			// Determine joiner's IP and set RPC address
+			joinerIP, _, _ := net.SplitHostPort(connection.RemoteAddr().String())
+			transport.Bind(fmt.Sprintf("%s:%s", joinerIP, joinerRPCPort))
+
+			// Start RPC listener
+			go transport.Listen(ctx, rpcListener)
+			connection.Close()
 		}()
 	}
 	game.Hp[playerName] = 5
@@ -92,7 +140,6 @@ func main() {
 	fmt.Printf("%s's HP: %d\n", opponentName, game.Hp[opponentName])
 
 	game.Wg.Add(1)
-	go transport.Listen(ctx)
 	if mode == "host" {
 		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
