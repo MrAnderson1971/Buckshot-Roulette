@@ -172,7 +172,7 @@ func (*Adrenaline) Use(player string) {
 	}
 	for k, v := range opponentsItems {
 		if v > 0 {
-			fmt.Printf("%d: %s: %d\n", k, NumberToItem[k].Name(), v)
+			fmt.Printf("%d: %s\n", k, NumberToItem[k].Name())
 		}
 	}
 	clientStubs.Summary("Opponent is trying to steal something...")
