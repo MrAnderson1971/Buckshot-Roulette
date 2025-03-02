@@ -1,16 +1,17 @@
 package rpc
 
 const (
-	Summary   = "summary"
-	Action    = "action"
-	Damage    = "damage"
-	GameOver  = "gameOver"
-	MoreItems = "moreItems"
-	YourTurn  = "yourTurn"
-	Reload    = "reload"
-	Eject     = "eject"
-	Heal      = "heal"
-	Invert    = "invert"
+	Summary    = "summary"
+	Action     = "action"
+	Damage     = "damage"
+	GameOver   = "gameOver"
+	MoreItems  = "moreItems"
+	YourTurn   = "yourTurn"
+	Reload     = "reload"
+	Eject      = "eject"
+	Heal       = "heal"
+	Invert     = "invert"
+	Adrenaline = "adrenaline"
 )
 
 type DamageArgs struct {
@@ -38,4 +39,10 @@ func (s Shell) String() string {
 		return "live"
 	}
 	return "blank"
+}
+
+type Item interface {
+	Name() string
+	Description() string
+	Use(player string)
 }

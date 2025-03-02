@@ -18,6 +18,7 @@ func Register() {
 	transport.Register(rpc.Eject, eject)
 	transport.Register(rpc.Heal, heal)
 	transport.Register(rpc.Invert, invert)
+	transport.Register(rpc.Adrenaline, adrenaline)
 }
 
 func summary(argData []byte) (out []byte, err error) {
@@ -104,5 +105,11 @@ func invert(argData []byte) (out []byte, err error) {
 		game.Shells[0].Value = 1 - game.Shells[0].Value
 		fmt.Println("Opponent used inverter...")
 		return nil
+	})
+}
+
+func adrenaline(argData []byte) (out []byte, err error) {
+	return transport.ServerStub[int](argData, func(num int) any {
+		return game.Items[game.NumberToItem[num]]
 	})
 }

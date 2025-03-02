@@ -47,7 +47,8 @@ func ClientStub[R any](funcName string, args any) (result R) {
 		panic(err)
 	}
 
-	Api(RPCRequest{funcName, argData}, address)
+	resultData := Api(RPCRequest{funcName, argData}, address)
+	json.Unmarshal(resultData, &result)
 	return
 }
 

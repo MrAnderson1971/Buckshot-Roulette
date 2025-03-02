@@ -7,12 +7,6 @@ import (
 	"math/rand"
 )
 
-type Item interface {
-	Name() string
-	Description() string
-	Use(player string)
-}
-
 type MagnifyingGlass struct{}
 
 func (*MagnifyingGlass) Name() string {
@@ -155,4 +149,24 @@ func (*Inverter) Use(player string) {
 	}
 	fmt.Println("Inverted shell.")
 	clientStubs.Invert()
+}
+
+type Adrenaline struct{}
+
+func (*Adrenaline) Name() string {
+	return "Adrenaline"
+}
+
+func (*Adrenaline) Description() string {
+	return "🍵 Steals an item from your opponent and use it immediately."
+}
+
+func (*Adrenaline) Use(player string) {
+	opponentsItems := make([]int, len(NumberToItem))
+	for i, _ := range NumberToItem {
+		opponentsItems[i] = clientStubs.Adrenaline(i)
+	}
+	for k, v := range opponentsItems {
+		fmt.Printf("%s: %d\n", NumberToItem[k].Name(), v)
+	}
 }

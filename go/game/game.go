@@ -26,11 +26,11 @@ type settings struct {
 }
 
 func MoreItems() {
-	tempItems := make([]Item, 0, len(NumberToItem))
+	tempItems := make([]rpc.Item, 0, len(NumberToItem))
 	for _, stuff := range NumberToItem {
 		tempItems = append(tempItems, stuff)
 	}
-	chosenItems := make([]Item, 0)
+	chosenItems := make([]rpc.Item, 0)
 	for i := 0; i < 2; i++ {
 		selectedItem := rand.Intn(len(tempItems))
 		chosenItems = append(chosenItems, tempItems[selectedItem])
@@ -45,7 +45,7 @@ func MoreItems() {
 	clientStubs.Summary("Opponent gets " + sb)
 }
 
-var NumberToItem = []Item{
+var NumberToItem = []rpc.Item{
 	&MagnifyingGlass{},
 	&Cigarette{},
 	&Beer{},
@@ -54,8 +54,9 @@ var NumberToItem = []Item{
 	&Phone{},
 	&Medicine{},
 	&Inverter{},
+	&Adrenaline{},
 }
-var Items = map[Item]int{
+var Items = map[rpc.Item]int{
 	NumberToItem[0]: 0,
 	NumberToItem[1]: 0,
 	NumberToItem[2]: 0,
@@ -64,6 +65,7 @@ var Items = map[Item]int{
 	NumberToItem[5]: 0,
 	NumberToItem[6]: 0,
 	NumberToItem[7]: 0,
+	NumberToItem[8]: 0,
 }
 
 func TakeTurn(target string, other string, shooter string) string {
@@ -146,6 +148,9 @@ func CurrentTurn(player string, opponent string) {
 			}
 		} else if choice == "cheat" {
 			fmt.Println(Shells)
+			for item, _ := range Items {
+				Items[item]++
+			}
 		} else if choiceToInt, err := strconv.Atoi(choice); err == nil && choiceToInt >= 3 &&
 			choiceToInt < len(NumberToItem)+3 && Items[NumberToItem[choiceToInt-3]] > 0 {
 			NumberToItem[choiceToInt-3].Use(player)

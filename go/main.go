@@ -142,7 +142,7 @@ func main() {
 		game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your opponent's turn...")
 	} else if mode == "join" {
-		game.CurrentTurn(playerName, opponentName)
+		//game.CurrentTurn(playerName, opponentName)
 		fmt.Println("Waiting for your turn...")
 	}
 	game.Wg.Wait()

@@ -44,3 +44,7 @@ func Heal(amount int, target, message string) {
 func Invert() {
 	transport.ClientStub[any](rpc.Invert, nil)
 }
+
+func Adrenaline(n int) int {
+	return transport.ClientStub[int](rpc.Adrenaline, n)
+}
