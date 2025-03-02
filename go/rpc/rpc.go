@@ -12,6 +12,7 @@ const (
 	Heal       = "heal"
 	Invert     = "invert"
 	Adrenaline = "adrenaline"
+	Steal      = "steal"
 )
 
 type DamageArgs struct {

@@ -48,3 +48,7 @@ func Invert() {
 func Adrenaline(n int) int {
 	return transport.ClientStub[int](rpc.Adrenaline, n)
 }
+
+func Steal(n int) bool {
+	return transport.ClientStub[bool](rpc.Steal, n)
+}

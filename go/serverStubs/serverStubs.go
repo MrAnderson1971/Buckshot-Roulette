@@ -19,6 +19,7 @@ func Register() {
 	transport.Register(rpc.Heal, heal)
 	transport.Register(rpc.Invert, invert)
 	transport.Register(rpc.Adrenaline, adrenaline)
+	transport.Register(rpc.Steal, steal)
 }
 
 func summary(argData []byte) (out []byte, err error) {
@@ -111,5 +112,15 @@ func invert(argData []byte) (out []byte, err error) {
 func adrenaline(argData []byte) (out []byte, err error) {
 	return transport.ServerStub[int](argData, func(num int) any {
 		return game.Items[game.NumberToItem[num]]
+	})
+}
+
+func steal(argData []byte) (out []byte, err error) {
+	return transport.ServerStub(argData, func(num int) any {
+		if game.Items[game.NumberToItem[num]] > 0 {
+			game.Items[game.NumberToItem[num]]--
+			return true
+		}
+		return false
 	})
 }

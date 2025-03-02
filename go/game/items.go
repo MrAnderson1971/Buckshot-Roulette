@@ -5,6 +5,7 @@ import (
 	"Roulette/rpc"
 	"fmt"
 	"math/rand"
+	"strconv"
 )
 
 type MagnifyingGlass struct{}
@@ -162,11 +163,30 @@ func (*Adrenaline) Description() string {
 }
 
 func (*Adrenaline) Use(player string) {
-	opponentsItems := make([]int, len(NumberToItem))
+	opponentsItems := make(map[int]int)
 	for i, _ := range NumberToItem {
+		if _, ok := NumberToItem[i].(*Adrenaline); ok {
+			continue
+		}
 		opponentsItems[i] = clientStubs.Adrenaline(i)
 	}
 	for k, v := range opponentsItems {
-		fmt.Printf("%s: %d\n", NumberToItem[k].Name(), v)
+		if v > 0 {
+			fmt.Printf("%d: %s: %d\n", k, NumberToItem[k].Name(), v)
+		}
+	}
+	clientStubs.Summary("Opponent is trying to steal something...")
+	fmt.Println("Type in a number to steal:")
+	for {
+		var choice string
+		fmt.Scanln(&choice)
+		num, err := strconv.Atoi(choice)
+		if err != nil || !clientStubs.Steal(num) {
+			fmt.Println("Error: invalid choice")
+			continue
+		}
+		clientStubs.Summary(fmt.Sprintf("Opponent stole your %s!", NumberToItem[num].Name()))
+		NumberToItem[num].Use(player)
+		break
 	}
 }
